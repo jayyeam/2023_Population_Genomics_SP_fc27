@@ -1,0 +1,460 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(stats)
+library(viridis)
+library(zoo)
+library(tidyverse)
+library(raster)
+library(rgdal)
+library(ggpubr)
+library(broom)
+library(AICcmodavg)
+library(rstatix)
+library(vegan)
+library(factoextra)
+library(qqman) 
+```
+
+```{r, read files}
+table <- fread(file = "/Users/jyeam/Documents/Projects/2022_Population_Genomics/Results/Suillus.sub.filtered.merged.table.012.tsv", sep = '\t', header = FALSE)
+indv <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/sampleID.csv")
+pos <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Results/Suillus.sub.filtered.merged.table.012.pos.tsv", sep = '\t', header = FALSE)
+coordinates <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/SNPlocation.csv")
+Bio.clim.t.mean.files <- list.files("/Users/jyeam/Documents/BioClim_variables_2.5m_bio", ".tif", full.names=TRUE)
+host <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/HostType.csv")
+specimen <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/SpecimenID.csv")
+```
+
+```{r, data formatting}
+pos$V1 <- paste(pos$V1, pos$V2, sep = "_")
+pos <- subset(pos, select = -c(V2))
+
+geno <- subset(table, select = -c(V1))
+colnames(geno) <- pos$V1
+
+geno.frame <- cbind(indv, geno) %>% 
+  as.data.frame()
+
+coordinates_df <- cbind(coordinates, geno.frame)
+coordinates_df <- subset(coordinates_df, select = -c(Sample))
+
+##stack them together, this is the critical step
+BIOCLIM.stack <- stack(Bio.clim.t.mean.files)
+library(dplyr)
+
+coord_site <- coordinates_df %>% 
+  dplyr::select(Sample,Longitude,Latitude) %>% 
+  na.omit() %>% 
+  column_to_rownames(var='Sample') %>% 
+  data.frame
+# extract values for given Long/lat as specified for each coordinate
+BIOCLIM_ext <- raster::extract(BIOCLIM.stack, coord_site, df=T)
+BIOCLIM_character <- BIOCLIM_ext %>% 
+  mutate(`ID`=as.character(`ID`))
+##now add the identifying domainIDback on to this: 
+clim_data_NEON<- cbind(coord_site,BIOCLIM_character) %>% 
+  dplyr::select(-ID) %>% 
+  rownames_to_column(var="Sample")
+
+coordinates_df[1:3,541745:541752]
+##confirm that the rows are retained as desired: 
+full <- cbind(coordinates_df,clim_data_NEON) %>% #combine datasets
+  relocate(wc2.1_2.5m_bio_1:wc2.1_2.5m_bio_9, .before = scaffold_1_6796) #moving bioclim data to front
+  # this was removed from full command %>% dplyr::select(-c(Sample.1, Longitude.1, Latitude.1))
+  
+fulldata1 <- cbind(host,specimen,full)# %>% 
+ # dplyr::select(-sampleID)
+fulldata2 <- fulldata1[,1:541775] 
+fulldata <- select(fulldata2,-Sample.ID) %>% 
+  relocate(Sample, SpecimenID)
+
+write.table(clim_data_NEON,file="clim_data_NEON.csv",sep=",")
+
+
+numerical <- fulldata[,26:ncol(fulldata)]
+numdf <- numerical[ , which(apply(numerical, 2, var) != 0)] #remove zero variance columns from dataset
+
+```
+
+```{r, PCA}
+
+
+pca_result <- prcomp(numdf, scale = TRUE)
+summary(pca_result)
+#http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/118-principal-component-analysis-in-r-prcomp-vs-princomp/
+PCA <- fviz_pca_ind(pca_result,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+
+df_out <- data.frame(pca_result$x)
+df_out$plotx <- df_out[,1]
+df_out$ploty <- df_out[,2]
+
+# I don't know what this is for (below)
+#latitude <- as.character(coord_df$Latitude)
+
+
+#https://sjmgarnier.github.io/viridis/reference/scale_viridis.html
+p <- ggplot(df_out, aes(x=plotx, y = ploty, color=fulldata$wc2.1_2.5m_bio_12)) + geom_point() + xlab("PC1") + ylab("PC2") + scale_colour_gradientn(colours = magma(100)) + theme_bw() + theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
+
+#Remove outliers
+masterdata <- fulldata[-c(27,28,31,32,61,64,73,74,75,76,77), ] %>% #samples had low read count so disgard
+  relocate(Sample)
+masternum <- masterdata[,25:ncol(masterdata)]
+masternumerical <- masternum[ , which(apply(masternum, 2, var) != 0)]
+pca_master <- prcomp(masternumerical, scale = TRUE)
+
+PCAmaster <- fviz_pca_ind(pca_master,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+
+  
+outlierdf <- fulldata[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ]
+out_df <- outlierdf %>% 
+  relocate(Sample) 
+
+rownames(out_df) <- NULL 
+numerical_out <- out_df[,26:ncol(out_df)]
+num_out_df <- numerical_out[ , which(apply(numerical_out, 2, var) != 0)] #remove zero variance columns from dataset
+save(num_out_df, file = "num_out_df.Rda")
+pca_out <- prcomp(num_out_df, scale = TRUE)
+
+PCA1 <- fviz_pca_ind(pca_out,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+df_out1 <- data.frame(pca_out$x)
+df_out1$plotx <- df_out1[,1]
+df_out1$ploty <- df_out1[,2]
+#Calculate PC scores
+eigenvalues <- pca_out$sdev^2
+prop_eigen <- eigenvalues/sum(eigenvalues)
+
+Latitude = outlierdf$Latitude
+Host = outlierdf$Host
+#https://sjmgarnier.github.io/viridis/reference/scale_viridis.html
+p1 <- ggplot(df_out1, aes(x=plotx, y = ploty, color=Latitude)) + geom_point(size = 3.0, aes(shape = Host)) + xlab("PC1 (3.14%)") + ylab("PC2 (2.82%)") + scale_colour_gradientn(colours = viridis(100)) + theme_bw() + theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
+p1
+
+```
+
+```{r, ADONIS}
+#Analysis of variance using distance matrices
+num_out_df
+MAT = as.numeric(outlierdf$wc2.1_2.5m_bio_1)
+ISO = as.numeric(outlierdf$wc2.1_2.5m_bio_3)
+SEASONAL_TEMP = as.numeric(outlierdf$wc2.1_2.5m_bio_4)
+TEMP_RANGE = as.numeric(outlierdf$wc2.1_2.5m_bio_7)
+PRECIP = as.numeric(outlierdf$wc2.1_2.5m_bio_12)
+SEASONAL_PRECIP = as.numeric(outlierdf$wc2.1_2.5m_bio_15)
+Host <- as.factor(outlierdf$Host)
+
+outlierdf$Bishop <- ifelse(outlierdf$Host == 'Bishop', 1, 0)
+outlierdf$Monterey <- ifelse(outlierdf$Host == 'Monterey', 1, 0)
+outlierdf <- outlierdf %>% 
+  relocate(Bishop, Monterey, .after = Host) %>% 
+  relocate(Sample)
+
+adonis <- adonis(num_out_df ~ MAT + ISO + SEASONAL_TEMP + TEMP_RANGE + PRECIP + SEASONAL_PRECIP + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
+
+adonis1 <- adonis(num_out_df ~ MAT + ISO + PRECIP + SEASONAL_PRECIP, outlierdf, permutations = 999, method = "bray", strata = NULL)
+
+adonis2 <- adonis(num_out_df ~ MAT + ISO + PRECIP + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
+
+
+library(gdm)
+citation("gdm")
+
+```
+
+```{r, OutFLANK}
+
+
+library(devtools)
+library(qvalue)
+library(vcfR)
+library(OutFLANK)
+
+#http://rstudio-pubs-static.s3.amazonaws.com/305384_9aee1c1046394fb9bd8e449453d72847.html
+
+#vcf <- read.vcfR("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suillus.filtered.maxallele2.snpEff.vcf.gz")
+
+#https://popgen.nescent.org/2016-01-26-SNP-selection.html
+num_out_df
+num_matrix <- data.matrix(num_out_df, rownames.force = NA)
+colnames(num_matrix) <- NULL
+
+
+outlierdf
+ind <- paste("pop", outlierdf[,4])
+lociname <- as.character(colnames(num_out_df))
+FstDataFrame <- MakeDiploidFSTMat(num_matrix, lociname, ind)
+
+
+#plot(FstDataFrame$FST, FstDataFrame$FSTNoCorr, xlim = c(-0.01,0.3), 
+    # ylim = c(-0.01, 0.3), pch = 20)
+#abline(0, 1) 
+#hist(FstDataFrame$FSTNoCorr) 
+
+#hist(FstDataFrame$FSTNoCorr) 
+#plot(FstDataFrame$LocusName, FstDataFrame$FST, ylim = c(0.01, 0.8), xlim = c(0, 1), pch=20, col="grey")
+#hist(FstDataFrame$FSTNoCorr, breaks=seq(0,0.6, by=0.001))
+#hist(FstDataFrame$FSTNoCorr[FstDataFrame$He>0.05], breaks=seq(0,0.6, by=0.001))
+#hist(FstDataFrame$FSTNoCorr[FstDataFrame$He>0.1], breaks=seq(0,0.6, by=0.001))
+
+
+#OF <- OutFLANK(FstDataFrame, NumberOfSamples=69, qthreshold = 0.01, 
+               #RightTrimFraction = 0.05)
+#OutFLANKResultsPlotter(OF, withOutliers = TRUE, NoCorr = TRUE, Hmin = 0.1, 
+                      # binwidth = 0.005, Zoom = FALSE, RightZoomFraction = 0.05, 
+                      # titletext = NULL)
+#########
+#outliers_OF <- OF$results$LocusName[OF$results$OutlierFlag == TRUE]
+#length(outliers_OF)
+#########
+outlier <- OutFLANK(FstDataFrame,NumberOfSamples = 70, 
+                     RightTrimFraction = 0.06, LeftTrimFraction = 0.35,
+                     qthreshold = 0.05, Hmin = 0.1)
+OutFLANKResultsPlotter(outlier, withOutliers = TRUE, NoCorr = TRUE, Hmin = 0.1, 
+                       binwidth = 0.005, Zoom = FALSE, RightZoomFraction = 0.05, 
+                       titletext = NULL)
+outlier_OF <- outlier$results$LocusName[outlier$results$OutlierFlag == TRUE]
+print(outlier_OF)
+length(outlier_OF)
+
+
+outflank_results <- as.data.frame(outlier$results)
+write.csv(outflank_results, file = "OUTFLANK_results.csv")
+nrow(FstDataFrame)
+nrow(outlier$results)
+sum(outlier$results$qvalues<0.01, na.rm=TRUE)
+
+plot(outlier$results$He, outlier$results$FST, pch=20, col="grey")
+  points(outlier$results$He[outlier$results$qvalues<0.01], y = outlier$results$FST[outlier$results$qvalues<0.01], pch=21, col="blue")
+#replace $He with $LocusName
+plot(outlier$results$He, outlier$results$FST, pch=20, col="grey")
+  points(outlier$results$He[outlier$results$qvalues<0.01], y = outlier$results$FST[outlier$results$qvalues<0.01], pch=21, col="blue")
+
+
+
+outlier    
+top_candidates <- outlier$results$qvalues<0.01 & outlier$results$He>0.1    
+topcan <- outlier$results[top_candidates,]
+outlier_loci <- topcan[order(topcan$LocusName),]
+
+plot(outlier$results$He, outlier$results$FST, pch=20, col="grey")
+    points(outlier$results$He[top_candidates], outlier$results$FST[top_candidates], pch=21, col="blue")
+
+#Candidate loci based on p value
+pvalue_out <- outlier$results$pvalues<0.01 & outlier$results$He>0.1
+topcan_p <- outlier$results[pvalue_out,]
+outlier_loci_p <- topcan_p[order(topcan_p$LocusName),]
+outlier_loci_p
+
+outlier$results$LocusName
+#Manhattan Plot
+snp_num <- outlier$results$LocusName
+out_loci <- row.names(outlier_loci)
+library(stringr)
+split <- as.data.frame(str_split_fixed(outlier$results$LocusName, "_", 3))
+CHROM <- as.numeric(split[,2])
+POS <- split[,3]
+num_out_df
+BP <- as.data.frame(seq(nrow(outlier$results)))
+P <- -log(outlier$results$qvalues)        
+gwas <- cbind(POS, CHROM, BP, P)
+snp_position <- sub("^", "sp", POS)
+gwas <- cbind(snp_position, CHROM, BP, P)
+colnames(gwas)[1] = "POS"
+colnames(gwas)[2] = "CHROM"
+colnames(gwas)[3] = "BP"
+colnames(gwas)[4] = "qvalues"
+gwas <- na.omit(gwas)
+
+gwas <- gwas[gwas$P >= 0, ]
+out_loci <- sub("^", "sp", row.names(outlier_loci))
+manhattan(gwas, chr="CHROM", bp="BP", snp="POS", p="qvalues", main = "Manhattan Plot", ylim = c(0,10), cex = 0.8, suggestiveline = T, genomewideline = T, logp=FALSE, ylab="qvalues", highlight = top_candidates)
+
+-log(.01)
+-log(0.001)
+-log(0.05)
+```
+
+
+
+```{r, PCAdapt}
+#https://popgen.nescent.org/2016-01-26-SNP-selection.html
+
+
+pca_genotype <- read.pcadapt(t(num_out_df))
+K <- 25
+x <- pcadapt(pca_genotype, K = 4, method = c("mahalanobis"), min.maf = 0.05, ploidy =2, LD.clumping = list(size = 500, thr = 0.1))
+plot(x, option = "manhattan")
+plot(x, option = "qqplot", threshold = 0.1)
+plot(x, option = "stat.distribution") # Distribution of Mahalanobis distances.
+str(x)
+padj <- p.adjust(x$pvalues,method="bonferroni")
+alpha <- 0.05
+outliers_pcadapt <- which(padj < alpha)
+length(outliers_pcadapt)
+print(outliers_pcadapt)
+outliers_pcadapt <- as.data.frame(outliers_pcadapt)
+
+#the snp positions of the PCAdapt outliers
+pcadapt_snps <- outlier$results[outliers_pcadapt$outliers_pcadapt, 1]
+
+
+outliers <- pcadapt_snps[pcadapt_snps %in% outlier_loci$LocusName] #FIgure this out
+
+##############################GLM##############################
+temp <- outlierdf[ ,7]
+outlier_loci$LocusName[1] #From outflank
+outliers_pcadapt #this is from PCAdapt
+out_loci1 <- as.data.frame(as.numeric(out_loci))
+
+loc1 <- num_out_df[ ,pcadapt_snps[10]]
+loc1temp <- data.frame(loc1, temp)
+mod <- glm(cbind(loc1, 2 - loc1) ~ temp, family = binomial) 
+ggplot(loc1temp, aes(x = factor(loc1), y = temp)) + 
+ geom_boxplot() + 
+ xlab("Major allele count") +
+ ylab("Mean Annual Temperature")
+
+```
+
+
+
+```{r, Manhattan Plots for PCADAPT}
+#Manhattan Plot
+library(stringr)
+split <- as.data.frame(str_split_fixed(FstDataFrame$LocusName, "_", 3))
+CHROM <- as.numeric(split[,2])
+POS <- split[,3]
+num_out_df
+BP <- as.data.frame(seq(ncol(num_out_df)))
+?pcadapt
+P <- x$pvalues      
+gwas <- cbind(POS, CHROM, BP, P)
+snp_position <- sub("^", "sp", POS)
+gwas <- cbind(snp_position, CHROM, BP, P)
+colnames(gwas)[1] = "POS"
+colnames(gwas)[2] = "CHROM"
+colnames(gwas)[3] = "BP"
+colnames(gwas)[4] = "P"
+gwas <- na.omit(gwas)
+outliers_pcadapt <- as.data.frame(outliers_pcadapt)
+gwas <- gwas[gwas$P >= 0, ]
+out_pcadapt <- sub("^", "sp", outliers_pcadapt$outliers_pcadapt)
+manhattan(gwas, chr="CHROM", bp="BP", snp="POS", p="P", main = "Manhattan Plot", ylim = c(0,10), cex = 0.8, suggestiveline = T, genomewideline = T, highlight = outliers_pcadapt) #NEED TO REPLACE OUTLIER_PCADAPT WITH SCAFFOLD_SNP POSITIONS
+
+
+```
+
+
+``` {r, Maps}
+
+#https://rstudio-pubs-static.s3.amazonaws.com/676340_b6f5780eb85046ad88a6f59732068631.html
+#devtools::install_github("dkahle/ggmap")
+#install.packages('mapdata')
+
+library(ggplot2)
+library(ggmap)
+library(maps)
+library(mapdata)
+library(stringr)
+library(dplyr)
+library(tidyverse)
+library()
+
+usa <- map_data("usa")
+states <- map_data("state")
+ca_df <- subset(states, region == "california")
+counties <- map_data("county")
+ca_county <- subset(counties, region == "california")
+SampleCoordinates <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Map_Count.csv", stringsAsFactors = FALSE)
+ca_base <- ggplot(data = ca_df, mapping = aes(x = long, y = lat, 
+                group = group)) + 
+                coord_fixed(1.3) + 
+                geom_polygon(color = "black", fill = "gray")
+
+ca_base + theme_nothing() + 
+  geom_polygon(data = ca_county, fill = NA, color = "white") +
+  geom_polygon(color = "black", fill = "gray") + 
+  geom_point(data = SampleCoordinates, aes(x=Longitude, y=Latitude, size=Count), inherit.aes =FALSE)
+
+
+
+
+
+ggplot(data = ca_df, mapping = aes(x = long, y = lat, group = group)) + 
+                coord_fixed(1.3) + 
+                geom_polygon(color = "black", fill = "gray") +
+geom_point(data = SampleCoordinates, colour = "red", size=Count))
+```
+
+```{r, GO terms}
+
+snp.gene <- read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/files/SP_snpgenes.gff", header=F, comment.char="#")
+
+GO.df <- as.data.frame(read.table("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_proteins_20200424_GO.tab", header=F, sep="\t", fill = TRUE, quote = ""))
+
+#removing some columns and seperating INFO column
+gene_list <- data.frame(snp.gene$V1, snp.gene$V2, snp.gene$V3, snp.gene$V4, snp.gene$V8, do.call(rbind, strsplit(snp.gene$V9, split = ";", fixed = TRUE)))
+
+#remove unnecessary columns
+gene_list1 <- subset(gene_list, select = -c(X1, X3, snp.gene.V8))
+
+#rename columns
+colnames(gene_list1)[1] = "Chrom"
+colnames(gene_list1)[2] = "Database"
+colnames(gene_list1)[3] = "Type"
+colnames(gene_list1)[4] = "Position"
+colnames(gene_list1)[5] = "Protein_ID"
+colnames(gene_list1)[6] = "Product_Name"
+
+gene_list1$Product_Name <- gsub("product_name","", gene_list1$Product_Name)
+gene_list1$Protein_ID <- gsub("proteinId", "", gene_list1$Protein_ID)
+
+#remove rows that are in the exon
+gene_list2 <-gene_list1[!(gene_list1$Type=="exon"), ]
+gene_list2
+
+proteinID <- as.numeric(gene_list2$Protein_ID)
+################################################
+colnames(GO.df)[1] = "proteinId"
+colnames(GO.df)[2] = "gotermId"
+colnames(GO.df)[3] = "goName"
+colnames(GO.df)[4] = "gotermType"
+colnames(GO.df)[5] = "goAcc"
+################################################
+
+
+#Pull goterms that are in gene_list2 dataframe
+GO_term_snp_list <- GO.df %>% 
+  filter(proteinId %in% proteinID)
+View(GO_term_snp_list)
+
+
+length(unique(gene_list2$Protein_ID))
+
+
+```
+
+
+

@@ -3,7 +3,7 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-Github token: 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
+Github token: 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
 
 ```{r}
 library(dplyr)
@@ -22,8 +22,27 @@ library(rstatix)
 library(vegan)
 library(factoextra)
 library(qqman) 
+install.packages('SNPfiltR')
+library(SNPfiltR)
+install.packages("LDlinkR")
+library(LDlinkR)
+BiocManager::install("snpMatrix")
+library(snpMatrix)
+
 ```
 
+
+
+```{r, read vcf}
+
+
+vcfR <- read.vcfR("/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population_Genomics_SP_fc27/SP.merged.filtered.vcf")
+vcfR_012 <- filter_biallelic(vcfR)
+vcfR_hardfilter <- hard_filter(vcfR, depth = 5, gq = 30)
+vcfR_missing <- missing_by_sample(vcfR, cutoff = 0.7)
+vcfR_LD <- distance_thin(vcfR, min.distance = 200)
+
+```
 ```{r, read files}
 table <- fread(file = "/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/SP.merged.filtered.table.012.tsv", sep = '\t', header = FALSE)
 indv <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/sampleID.csv")
@@ -121,7 +140,7 @@ PCAmaster <- fviz_pca_ind(pca_master,
              repel = TRUE     # Avoid text overlapping
              )
 
-  
+fulldata[19, 4] = "Monterey"
 outlierdf <- fulldata[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ]
 out_df <- outlierdf %>% 
   relocate(Sample) 
@@ -180,6 +199,192 @@ library(gdm)
 citation("gdm")
 
 ```
+
+```{r, Dendrogram}
+#http://www.sthda.com/english/wiki/beautiful-dendrogram-visualizations-in-r-5-must-known-methods-unsupervised-machine-learning
+# other that I didn't really use: https://www.rpubs.com/dvallslanaquera/clustering
+install.packages('ggdendro')
+install.packages('ape')
+if(!require(dendextend)) install.packages("dendextend")
+library("dendextend")
+?dendextend
+library(ggdendro)
+library(cluster)
+library(factoextra)
+
+dendrodata <- outlierdf[,-1]
+rownames(dendrodata) <- dendrodata[,1]
+dendrodf <- as.data.frame(dendrodata[,27:ncol(dendrodata)])
+dendrodf[ , 541740:541747]
+dd <- dist(scale(dendrodf), method = "euclidean")
+hc <- hclust(dd, method = "ward.D2")
+
+###############
+fulldata
+fulldata_num <- fulldata[,26:ncol(fulldata)]
+#https://stackoverflow.com/questions/27485549/how-to-colour-the-labels-of-a-dendrogram-by-an-additional-factor-variable-in-r
+hcd <- as.dendrogram(hc)
+labels_colors(hcd)
+par(mfrow = c(1,2))
+plot(hcd, main = "Original dend")
+#adding some color by tree association
+colors_to_use <- unclass(as.factor(dendrodata[,3]))
+colors_to_use <- colors_to_use[order.dendrogram(hcd)]
+labels_colors(hcd) <- colors_to_use
+plot(hcd, main = "Cluster Dendrogram Grouped by Host Association")
+###############
+
+
+plot(hclust(dd, method = "ward.D2"))
+rect.hclust(hc, k=4, border = 2:5)
+x_clust
+ggdendrogram(hc, rotate = FALSE, size = 2)
+ddata <- dendro_data(hcd, type = "rectangle")
+dendro_plot <- ggplot(segment(ddata)) +
+  geom_segment(aes(x = x, y = y, xend = xend, yend = yend)) + 
+  coord_flip() + 
+  scale_y_reverse(expand = c(0.2, 0))
+
+plot(hc)
+rect.hclust(hc, k = 4, border = 2:5)
+hcd <- as.dendrogram(hc)
+plot(hc)
+plot(hcd)
+png("ClusterDendrogram.png",width=13,height=5,units="in",res=4000)
+plot(hc)
+dev.off()
+dendrogram <- plot(hcd)
+dendrodata %>% 
+  
+
+labels(hcd) <- masterdata$SpecimenID
+labels(hcd)
+plot(hc, labels = NULL, cex=0.8, hang = 0.1, 
+     main = "Cluster dendrogram", sub = NULL,
+     xlab = NULL, ylab = "Height")
+
+#Divide into Subgroups
+sub_grp <- cutree(hc, k =4)
+table(sub_grp)
+
+outlierdf[19, 4] = "Monterey"
+
+plot(as.phylo(hc), cex = 0.5, label.offset = 0.5)
+
+plot(as.phylo(hc), type = "unrooted", cex = 0.6,
+     no.margin = TRUE)
+
+nodePar <- list(lab.cex = 0.6, pch = c(NA, 19), cex = 0.7, col = "blue")
+
+
+```
+
+```{r, P-value GWAS}
+sample.list <- as.data.frame(specimen[ ,1], header=FALSE, col.names="ID")
+colnames(sample.list)[1] <- "ID"
+sample.list
+
+fam <- data.frame(FamilyID = rep(1, nrow(sample.list)),
+                  IndividualID = sample.list$ID,
+                  PaternalID = 0,
+                  MaternalID = 0,
+                  Sex = rep(0, nrow(sample.list)),
+                  Phenotype = rep(-9, nrow(sample.list)))
+write.table(fam, file="mydata.fam", quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+
+
+
+```
+
+
+
+```{r, Fisher exact test}
+#https://adegenet.r-forge.r-project.org/files/Leuven2014/practical-GWAS.pdf
+install.packages("glmnet", dep=TRUE)
+install.packages('ade4')
+install.packages('Matrix')
+library(ade4)
+library(adegenet)
+library(stats)
+library(glmnet)
+library(Matrix)
+snps <- as.matrix(num_out_df)
+phen <- factor(outlierdf[,4])
+
+#Create PCA
+pca1 <- dudi.pca(snps, scale=FALSE)
+
+#Plot PCA
+s.label(pca1$li, sub="PCA - PC 1 and 2")
+add.scatter.eig(pca1$eig,4,1,2, ratio=.3, posi="topleft")
+
+#Plot the distances
+D <- dist(pca1$li[,1:4])^2
+clust <- hclust(D, method="complete")
+
+temp <- as.data.frame(as.matrix(D))
+temp <- t(as.matrix(D))
+temp <- temp[,ncol(temp):1]
+
+#Heat Map of samples
+par(mar=c(1,5,5,1))
+image(x=1:69, y=1:69, temp, col=rev(heat.colors(nlevels(as.factor(D)))),
+xaxt="n", yaxt="n",
+xlab="",ylab="")
+axis(side=2, at=1:69, lab=rev(rownames(snps)), las=2, cex.axis=.46)
+axis(side=3, at=1:69, lab=rownames(snps), las=2, cex.axis=.46)
+
+#Dendrogram
+plot(clust, main="Clustering (complete linkage) based on the first 4 PCs", cex=.4)
+
+s.class(pca1$li, fac=phen, col=transp(c("royalblue","red")), cpoint=2,
+sub="PCA - axes 1 and 2")
+add.scatter.eig(pca1$eig,4,1,2, ratio=.24, posi="topleft")
+
+#Calculate p-value
+pval <- apply(snps, 2, function(e)
+  fisher.test(table(factor(e, levels=c(0,1)), phen))$p.value)
+#Corrected p-value
+pval.corrected <- p.adjust(pval, method="fdr")
+length(which(pval.corrected < 0.05))
+
+snps.selected.univariate <- which(pval.corrected < 0.05)
+n.snps.selected.univariate <- length(snps.selected.univariate)
+
+snps.selected.univariate
+str(snps.selected.univariate)
+
+#Manhattan Plot using False Discovery Rate (FDR)
+log.pval <- -log10(pval.corrected)
+set.seed(1)
+log.pval <- jitter(log.pval, amount=0.2)
+plot(log.pval,
+col = c("red", "royalblue"),
+pch = 19,
+cex = 0.5,
+main="Manhattan plot: Fisher's exact test with FDR",
+xlab="SNPs", ylab="Corrected -log10(p-value)")
+
+#Manhattan Plot using Bonferroni Correction
+log.pval <- -log10(pval)
+set.seed(1)
+log.pval <- jitter(log.pval, amount=0.2)
+plot(log.pval,
+col = c("red", "royalblue"),
+pch = 19,
+cex = 0.5,
+main="Manhattan plot: Fisher's exact test with Bonferroni correction",
+xlab="SNP loci", ylab="Uncorrected -log10(p-value)",
+cex.main=1)
+bonferroni <- -log10(0.05 / ncol(snps))
+abline(h=bonferroni, col = "black")
+
+
+
+```
+
+
+
 
 ```{r, OutFLANK}
 
@@ -312,17 +517,14 @@ alpha <- 0.05
 outliers_pcadapt <- which(padj < alpha)
 length(outliers_pcadapt)
 
-print(outliers_pcadapt)
-outliers_pcadapt <- as.data.frame(outliers_pcadapt)
-outlier
 #the snp positions of the PCAdapt outliers
-pcadapt_snps <- outlier$results[outliers_pcadapt$outliers_pcadapt, 1]
+pcadapt_snps <- as.data.frame(outlier$results[outliers_pcadapt, 1])
 length(unique(pcadapt_snps))
 
 AdaptFlank_outliers <- pcadapt_snps[pcadapt_snps %in% outlier_loci$LocusName] #FIgure this out
 
 
-write.table(outliers_pcadapt, file = "Outloci_pos_pcadapt.csv", append =FALSE, sep = " ", dec = ".", row.names = TRUE, col.names = TRUE)
+write.table(pcadapt_snps, file = "Outloci_pos_pcadapt_0.05.csv", append =FALSE, sep = " ", dec = ".", row.names = TRUE, col.names = TRUE)
 
 ##############################GLM##############################
 temp <- outlierdf[ ,7]
@@ -478,7 +680,7 @@ length(unique(gene_list$Protein_ID))
 
 
 #PCAdapt outlier snps mapped to gene identify
-Outliers_pcadapt_gff <- read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Outloci_pcadapt.gff", header=F, comment.char="#")
+Outliers_pcadapt_gff <- read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population_Genomics_SP_fc27/Outloci_pcadapt_0.05.gff", header=F, comment.char="#")
 #removing some columns and seperating INFO column for PCAdapt GFF
 PCAdapt_gene_list <- data.frame(Outliers_pcadapt_gff$V1, Outliers_pcadapt_gff$V2, Outliers_pcadapt_gff$V3, Outliers_pcadapt_gff$V4, Outliers_pcadapt_gff$V8, do.call(rbind, strsplit(Outliers_pcadapt_gff$V9, split = ";", fixed = TRUE)))
 
@@ -506,7 +708,7 @@ pcadapt_gene_list3$Protein_ID <- as.numeric(pcadapt_gene_list3$Protein_ID)
 
 PCAdapt_GO <- GO.df %>% 
   filter(GO.df$proteinId %in% pcadapt_gene_list3$Protein_ID)
-
+View(PCAdapt_GO)
 length(unique(PCAdapt_GO$proteinId))
 
 

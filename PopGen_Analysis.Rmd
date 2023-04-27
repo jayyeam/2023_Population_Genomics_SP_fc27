@@ -22,27 +22,12 @@ library(rstatix)
 library(vegan)
 library(factoextra)
 library(qqman) 
-install.packages('SNPfiltR')
 library(SNPfiltR)
-install.packages("LDlinkR")
 library(LDlinkR)
-BiocManager::install("snpMatrix")
-library(snpMatrix)
+
 
 ```
 
-
-
-```{r, read vcf}
-
-
-vcfR <- read.vcfR("/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population_Genomics_SP_fc27/SP.merged.filtered.vcf")
-vcfR_012 <- filter_biallelic(vcfR)
-vcfR_hardfilter <- hard_filter(vcfR, depth = 5, gq = 30)
-vcfR_missing <- missing_by_sample(vcfR, cutoff = 0.7)
-vcfR_LD <- distance_thin(vcfR, min.distance = 200)
-
-```
 ```{r, read files}
 table <- fread(file = "/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/SP.merged.filtered.table.012.tsv", sep = '\t', header = FALSE)
 indv <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/sampleID.csv")
@@ -51,6 +36,7 @@ coordinates <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomic
 Bio.clim.t.mean.files <- list.files("/Users/jyeam/Documents/BioClim_variables_2.5m_bio", ".tif", full.names=TRUE)
 host <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/HostType.csv")
 specimen <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/SpecimenID.csv")
+population <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Pop_Gen_DATA.csv")
 ```
 
 ```{r, data formatting}
@@ -90,16 +76,17 @@ full <- cbind(coordinates_df,clim_data_NEON) %>% #combine datasets
   relocate(wc2.1_2.5m_bio_1:wc2.1_2.5m_bio_9, .before = scaffold_1_6796) #moving bioclim data to front
   # this was removed from full command %>% dplyr::select(-c(Sample.1, Longitude.1, Latitude.1))
   
-fulldata1 <- cbind(host,specimen,full)# %>% 
- # dplyr::select(-sampleID)
-fulldata2 <- fulldata1[,1:541775] 
-fulldata <- select(fulldata2,-Sample.ID) %>% 
+fulldata1 <- cbind(host,specimen, population$Population, full)
+colnames(fulldata1)[5] <- "Population"
+fulldata2 <- fulldata1[,1:541776] 
+fulldata <- dplyr::select(fulldata2,-Sample.ID) %>% 
   relocate(Sample, SpecimenID)
+
 
 write.table(clim_data_NEON,file="clim_data_NEON.csv",sep=",")
 
 
-numerical <- fulldata[,26:ncol(fulldata)]
+numerical <- fulldata[,27:ncol(fulldata)]
 numdf <- numerical[ , which(apply(numerical, 2, var) != 0)] #remove zero variance columns from dataset
 
 ```
@@ -146,7 +133,7 @@ out_df <- outlierdf %>%
   relocate(Sample) 
 
 rownames(out_df) <- NULL 
-numerical_out <- out_df[,26:ncol(out_df)]
+numerical_out <- out_df[,27:ncol(out_df)]
 num_out_df <- numerical_out[ , which(apply(numerical_out, 2, var) != 0)] #remove zero variance columns from dataset
 save(num_out_df, file = "num_out_df.Rda")
 pca_out <- prcomp(num_out_df, scale = TRUE)
@@ -188,9 +175,9 @@ outlierdf <- outlierdf %>%
   relocate(Bishop, Monterey, .after = Host) %>% 
   relocate(Sample)
 
-adonis <- adonis(num_out_df ~ MAT + ISO + SEASONAL_TEMP + TEMP_RANGE + PRECIP + SEASONAL_PRECIP + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
+#adonis <- adonis(num_out_df ~ MAT + ISO + SEASONAL_TEMP + TEMP_RANGE + PRECIP + SEASONAL_PRECIP + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
 
-adonis1 <- adonis(num_out_df ~ MAT + ISO + PRECIP + SEASONAL_PRECIP, outlierdf, permutations = 999, method = "bray", strata = NULL)
+#adonis1 <- adonis(num_out_df ~ MAT + ISO + PRECIP + SEASONAL_PRECIP, outlierdf, permutations = 999, method = "bray", strata = NULL)
 
 adonis2 <- adonis(num_out_df ~ MAT + ISO + PRECIP + SEASONAL_PRECIP + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
 
@@ -237,7 +224,8 @@ plot(hcd, main = "Cluster Dendrogram Grouped by Host Association")
 
 plot(hclust(dd, method = "ward.D2"))
 rect.hclust(hc, k=4, border = 2:5)
-x_clust
+
+
 ggdendrogram(hc, rotate = FALSE, size = 2)
 ddata <- dendro_data(hcd, type = "rectangle")
 dendro_plot <- ggplot(segment(ddata)) +
@@ -254,7 +242,7 @@ png("ClusterDendrogram.png",width=13,height=5,units="in",res=4000)
 plot(hc)
 dev.off()
 dendrogram <- plot(hcd)
-dendrodata %>% 
+
   
 
 labels(hcd) <- masterdata$SpecimenID
@@ -279,26 +267,124 @@ nodePar <- list(lab.cex = 0.6, pch = c(NA, 19), cex = 0.7, col = "blue")
 
 ```
 
-```{r, P-value GWAS}
-sample.list <- as.data.frame(specimen[ ,1], header=FALSE, col.names="ID")
-colnames(sample.list)[1] <- "ID"
-sample.list
+```{r, GDM}
 
-fam <- data.frame(FamilyID = rep(1, nrow(sample.list)),
-                  IndividualID = sample.list$ID,
-                  PaternalID = 0,
-                  MaternalID = 0,
-                  Sex = rep(0, nrow(sample.list)),
-                  Phenotype = rep(-9, nrow(sample.list)))
-write.table(fam, file="mydata.fam", quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+library(gdm)
 
+######################## 
+#Create bishop df
+Bishop <- filter(outlierdf, Host =="Bishop")
+Sample <- Bishop[,1]
+Bishopdf <- Bishop[,25:ncol(Bishop)]
+Bishopdf <- Bishopdf[ , which(apply(Bishopdf, 2, var) != 0)]
+bishopdf <- cbind(Sample, Bishopdf)
+
+bishopenv <- subset(Bishop, select = c(Sample, Latitude, Longitude, wc2.1_2.5m_bio_1, wc2.1_2.5m_bio_12, wc2.1_2.5m_bio_4, wc2.1_2.5m_bio_3, wc2.1_2.5m_bio_15))
+Bishop_sub <- df.sample
+Bishop_sub <- bishopdf[,1:50000]
+
+#Create Monterey df
+Monterey <- filter(outlierdf, Host == "Monterey")
+Sample <- Monterey[,1]
+Montereydf <- Monterey[,25:ncol(Monterey)]
+Montereydf <- Montereydf[ , which(apply(Bishopdf, 2, var) != 0)]
+montereydf <- cbind(Sample, Montereydf)
+montereyenv <- subset(Monterey, select = c(Sample, Latitude, Longitude, wc2.1_2.5m_bio_1, wc2.1_2.5m_bio_12, wc2.1_2.5m_bio_4, wc2.1_2.5m_bio_3, wc2.1_2.5m_bio_15))
+Monterey_sub <- montereydf[,1:50000]
+
+GDM_bish <- formatsitepair(bioData = Bishop_sub, bioFormat = 1, dist="bray", abundance = T, siteColumn = "Sample", XColumn= "Latitude", YColumn = "Longitude", predData = bishopenv)
+GDM_mont <- formatsitepair(bioData = Monterey_sub, bioFormat = 1, dist="bray", abundance = T, siteColumn = "Sample", XColumn= "Latitude", YColumn = "Longitude", predData = montereyenv)
+GDM_bish <- formatsitepair(bioData = Bishop_sub, bioFormat = 1, dist="bray", abundance = T, siteColumn = "Sample", XColumn= "Latitude", YColumn = "Longitude", predData = bishopenv)
+############################
+
+
+#BIO1 = Annual Mean Temperature
+#BIO3 = Isothermality (BIO2/BIO7) (×100)
+#BIO4 = Temperature Seasonality (standard deviation ×100)
+#BIO5 = Max Temperature of Warmest Month
+#BIO7 = Temperature Annual Range (BIO5-BIO6)
+#BIO12 = Annual Precipitation
+#BIO13 = Precipitation of Wettest Month
+#BIO15 = Precipitation Seasonality (Coefficient of Variation)
+Sample <- outlierdf[,1]
+gdm_data <- cbind(Sample,num_out_df)
+env_data <- subset(outlierdf, select = c(Sample, Latitude, Longitude, wc2.1_2.5m_bio_1, wc2.1_2.5m_bio_12, wc2.1_2.5m_bio_4, wc2.1_2.5m_bio_5, wc2.1_2.5m_bio_7, wc2.1_2.5m_bio_3, wc2.1_2.5m_bio_13, wc2.1_2.5m_bio_15))
+
+gdmsub <- gdm_data[,100000:200000]
+
+gdmsub <- cbind(Sample, gdmsub)
+
+GDM <- formatsitepair(bioData = gdmsub, bioFormat = 1, dist="bray", abundance = T, siteColumn = "Sample", XColumn= "Latitude", YColumn = "Longitude", predData = env_data)
+GDM_model <- gdm(GDM, geo=T)
+plot(GDM_model)
+summary(GDM_model1)
+
+isplines_reduced <- as.data.frame(isplineExtract(GDM_model))
+
+
+#GGplot 
+Geographic_distance_total <- ggplot(isplines_reduced, aes(x=x.Geographic, y= y.Geographic)) + geom_line(aes(y = gdm_data, color="gdm_data", linewidth=2)) + xlab("Geographic Distance (degrees)") + ylab("f(Geographic Distance)") + theme_classic() + ylim(0,1)
+
+
+
+
+
+
+
+gdm_varIMP<- gdm.varImp(GDM, geo=T) #calculates variants explained by each parameter. And gives summary statistic for the model
+?gdm.varImp
+
+## plotting the new plots for Bishop/Monterey
+GDM_model1<- gdm(GDM_bish, geo=T)
+plot(GDM_model1)
+summary(GDM_model2)
+GDM_model2 <- gdm(GDM_mont, geo=T)
+plot(GDM_model2)
+isplines_reduced1 <- as.data.frame(isplineExtract(GDM_model1))
+isplines_reduced2 <- as.data.frame(isplineExtract(GDM_model2))
+
+colors <- c("Bishop" = "salmon", "Monterey" = "skyblue")
+Geographic_distance_Bishop <- ggplot(isplines_reduced1, aes(x=x.Geographic, y= y.Geographic)) + geom_line(aes(y = Bishop, color="Bishop", linewidth=2), size = 1.5) + xlab("Geographic Distance (degrees)") + ylab("f(Geographic Distance)") + theme_classic() + ylim(0,.1)
+
+Precipitation_reduced_Bishop <- ggplot(isplines_reduced1, aes(x=x.wc2.1_2.5m_bio_15, y= y.wc2.1_2.5m_bio_15)) + geom_line(color="salmon", size=2) + xlab("Precipitation (coefficient of variance)") + ylab("f(Precipitation)") + theme_classic() + xlim(82,97) + ylim(0,.12)
+
+Geographic_distance_Monterey <- ggplot(isplines_reduced2, aes(x=x.Geographic, y= y.Geographic)) + geom_line(color="skyblue", linewidth=2) + xlab("Geographic Distance (degrees)") + ylab("f(Geographic Distance)") + theme_classic() + xlim(0,1.4) + ylim(0,.015)
+
+Temperature_Seasonality_Monterey <- ggplot(isplines_reduced2, aes(x=x.wc2.1_2.5m_bio_4, y= y.wc2.1_2.5m_bio_4)) + geom_line(color="skyblue", size=2) + xlab("Temperature (standard deviation x 100)") + ylab("f(Temperature)") + theme_classic() + xlim(200,350) + ylim(0,.1) 
+
+library("ggpubr")
+Figure1 <- ggarrange(Geographic_distance_Bishop, Precipitation_reduced_Bishop, Geographic_distance_Monterey, Temperature_Seasonality_Monterey, ncol = 2, nrow = 2)
 
 
 ```
 
+```{r, GLM}
+
+glm_data <- as.data.frame(num_out_df[, sample(1:ncol(num_out_df))])
+env_data1 <- as.data.frame(cbind(env_data, glm_data))
+
+Latitude = as.numeric(outlierdf$Latitude)
+Longitude = as.numeric(outlierdf$Longitude)
+colnames(env_data)[4] = "MAT"
+colnames(env_data)[5] = "Annual Precipitation"
+colnames(env_data)[6] = "Temp Seasonality"
+colnames(env_data)[7] = "Max Temp"
+colnames(env_data)[8] = "Annual Temp Range"
+colnames(env_data)[9] = "Isothermality"
+colnames(env_data)[10] = "Precipation of Wettest Month"
+colnames(env_data)[11] = "Precipitation Seasonality"
+env_data
+
+snp_glm1 <- glm(glm_data[, 1] ~ Latitude, data=env_data1,family=binomial())
+snp_glm1 <- glm(glm_data[, 1] ~ Latitude, data=env_data1,family=binomial())
+
+write.table(env_data1, file = "env_data.csv", sep=",")
+fwrite(glm_data, file = "glm_data_full.csv", sep=",", row.names = FALSE)
 
 
-```{r, Fisher exact test}
+```
+
+```{r, GWAS}
 #https://adegenet.r-forge.r-project.org/files/Leuven2014/practical-GWAS.pdf
 install.packages("glmnet", dep=TRUE)
 install.packages('ade4')
@@ -308,6 +394,7 @@ library(adegenet)
 library(stats)
 library(glmnet)
 library(Matrix)
+?adegenet
 snps <- as.matrix(num_out_df)
 phen <- factor(outlierdf[,4])
 
@@ -325,6 +412,7 @@ clust <- hclust(D, method="complete")
 temp <- as.data.frame(as.matrix(D))
 temp <- t(as.matrix(D))
 temp <- temp[,ncol(temp):1]
+
 
 #Heat Map of samples
 par(mar=c(1,5,5,1))
@@ -354,23 +442,13 @@ n.snps.selected.univariate <- length(snps.selected.univariate)
 snps.selected.univariate
 str(snps.selected.univariate)
 
-#Manhattan Plot using False Discovery Rate (FDR)
-log.pval <- -log10(pval.corrected)
-set.seed(1)
-log.pval <- jitter(log.pval, amount=0.2)
-plot(log.pval,
-col = c("red", "royalblue"),
-pch = 19,
-cex = 0.5,
-main="Manhattan plot: Fisher's exact test with FDR",
-xlab="SNPs", ylab="Corrected -log10(p-value)")
-
 #Manhattan Plot using Bonferroni Correction
 log.pval <- -log10(pval)
+jitter.pval <- jitter(pval, amount=0.2)
 set.seed(1)
 log.pval <- jitter(log.pval, amount=0.2)
 plot(log.pval,
-col = c("red", "royalblue"),
+col = c("gray"),
 pch = 19,
 cex = 0.5,
 main="Manhattan plot: Fisher's exact test with Bonferroni correction",
@@ -379,12 +457,38 @@ cex.main=1)
 bonferroni <- -log10(0.05 / ncol(snps))
 abline(h=bonferroni, col = "black")
 
+#Manhattan Plot using False Discovery Rate (FDR)
+log.pval <- -log10(pval.corrected)
+set.seed(1)
+log.pval <- jitter(log.pval, amount=0.2)
+plot(log.pval,
+col = c("gray"),
+pch = 19,
+cex = 0.5,
+main="Manhattan plot: Fisher's exact test with FDR",
+xlab="SNPs", ylab="Corrected -log10(p-value)")
+
+
+#Manhattan qqman package
+pval_df <- as.data.frame(jitter.pval)
+pval_gwas <- as.numeric(pval_df$jitter.pval)
+snp_pos <- rownames(pval_df)
+
+GWAS <- cbind(adapt_POS, adapt_CHROM, adapt_BP, jitter.pval) #pval_gwas
+colnames(GWAS)[1] = "POS"
+colnames(GWAS)[2] = "CHROM"
+colnames(GWAS)[3] = "BP"
+colnames(GWAS)[4] = "P"
+#adapt_gwas <- na.omit(gwas)
+GWAS <- GWAS[gwas$P >= 0, ]
+GWAS <- na.omit(GWAS)
+out_pcadapt <- sub("^", "sp", outliers_pcadapt)
+manhattan(GWAS, chr="CHROM", bp="BP", snp="POS", p="P", main = "Manhattan Plot", ylim = c(0,6), cex = 0.8, suggestiveline = T, genomewideline = T, highlight = pcadapt_outflank_snps) #NEED TO REPLACE OUTLIER_PCADAPT WITH SCAFFOLD_SNP POSITIONS
+
+
 
 
 ```
-
-
-
 
 ```{r, OutFLANK}
 
@@ -402,7 +506,7 @@ num_matrix <- data.matrix(num_out_df, rownames.force = NA)
 colnames(num_matrix) <- NULL
 
 outlierdf
-ind <- paste("pop", outlierdf[,4])
+ind <- outlierdf[,4]
 lociname <- as.character(colnames(num_out_df))
 FstDataFrame <- MakeDiploidFSTMat(num_matrix, lociname, ind)
 
@@ -445,16 +549,17 @@ outflank_results <- as.data.frame(outlier$results)
 #write.csv(outflank_results, file = "OUTFLANK_results.csv")
 nrow(FstDataFrame)
 nrow(outlier$results)
-sum(outlier$results$qvalues<0.01, na.rm=TRUE)
+sum(outlier$results$qvalues<0.05, na.rm=TRUE)
 
 plot(outlier$results$He, outlier$results$FST, pch=20, col="grey")
-  points(outlier$results$He[outlier$results$qvalues<0.01], y = outlier$results$FST[outlier$results$qvalues<0.01], pch=21, col="blue")
+  points(outlier$results$He[outlier$results$qvalues<0.05], y = outlier$results$FST[outlier$results$qvalues<0.05], pch=21, col="blue")
 
 outlier    
 top_candidates <- outlier$results$qvalues<0.05 & outlier$results$He>0.1  
 topcan <- outlier$results[top_candidates,]
 outlier_loci <- topcan[order(topcan$LocusName),]
 
+outflank_snp_pos <- rownames(topcan)
 #make the outlier_snp column based off the rownames
 outflank_snps <- rownames(topcan)
 sp_outflank_snps <- sub("^", "sp", row.names(topcan))
@@ -492,13 +597,11 @@ gwas <- na.omit(gwas)
 
 gwas <- gwas[gwas$P >= 0, ]
 out_loci <- sub("^", "sp", row.names(outlier_loci))
-manhattan(gwas, chr="CHROM", bp="BP", snp="POS", p="qvalues", main = "Manhattan Plot", ylim = c(0,10), cex = 0.8, suggestiveline = T, genomewideline = T, logp=FALSE, ylab="qvalues", highlight = sp_outflank_snps)
+manhattan(gwas, chr="CHROM", bp="BP", snp="POS", p="qvalues", main = "Manhattan Plot", ylim = c(0,7), cex = 0.8, suggestiveline = T, genomewideline = T, logp=FALSE, ylab="qvalues", highlight = pcadapt_outflank_snps)
 
 
 
 ```
-
-
 
 ```{r, PCAdapt}
 #https://popgen.nescent.org/2016-01-26-SNP-selection.html
@@ -517,21 +620,12 @@ alpha <- 0.05
 outliers_pcadapt <- which(padj < alpha)
 length(outliers_pcadapt)
 
-#the snp positions of the PCAdapt outliers
-pcadapt_snps <- as.data.frame(outlier$results[outliers_pcadapt, 1])
-length(unique(pcadapt_snps))
-
-AdaptFlank_outliers <- pcadapt_snps[pcadapt_snps %in% outlier_loci$LocusName] #FIgure this out
-
-
-write.table(pcadapt_snps, file = "Outloci_pos_pcadapt_0.05.csv", append =FALSE, sep = " ", dec = ".", row.names = TRUE, col.names = TRUE)
-
+AdaptFlank_outliers <- as.data.frame(outliers_pcadapt[outliers_pcadapt %in% outflank_snp_pos])
 ##############################GLM##############################
 temp <- outlierdf[ ,7]
 outlier_loci$LocusName[1] #From outflank
 outliers_pcadapt #this is from PCAdapt
 out_loci1 <- as.data.frame(as.numeric(out_loci))
-pcadapt_snps
 loc1 <- num_out_df[ ,pcadapt_snps[16]]
 loc1temp <- data.frame(loc1, temp)
 mod <- glm(cbind(loc1, 2 - loc1) ~ temp, family = binomial)
@@ -543,19 +637,45 @@ ggplot(loc1temp, aes(x = factor(loc1), y = temp)) +
 
 ```
 
+```{r, qqman}
 
+library(qqman)
+str(gwasResults)
+tail(gwasResults)
+snpsOfInterest
+adapt_gwas
+
+
+```
 
 ```{r, Manhattan Plots for PCADAPT}
 #Manhattan Plot
 library(stringr)
-split <- as.data.frame(str_split_fixed(FstDataFrame$LocusName, "_", 3))
+split <- as.data.frame(str_split_fixed(snp_pos, "_", 3)) #snp_pos is generated from GWAS section
 adapt_CHROM <- as.numeric(split[,2])
 adapt_BP <- as.data.frame(seq(ncol(num_out_df)))
-adapt_POS <- sub("^", "sp", adapt_BP$`seq(ncol(num_out_df))`)
+adapt_POS <- as.factor(sub("^", "sp", adapt_BP$`seq(ncol(num_out_df))`))
 adapt_P <- x$pvalues
 num_out_df
 
-adapt_gwas <- cbind(adapt_POS, adapt_CHROM, adapt_BP, adapt_P)
+#the snp positions of the PCAdapt outliers
+pcadapt_snps <- outlier$results[outliers_pcadapt, 1]
+
+
+write.table(pcadapt_snps, file = "Outloci_pos_pcadapt_0.05.csv", append =FALSE, sep = " ", dec = ".", row.names = TRUE, col.names = TRUE)
+
+length(unique(pcadapt_snps))
+
+outflank_snps <- outlier_loci$LocusName
+
+outflank_snp_pos1 <- as.numeric(outflank_snp_pos)
+AdaptFlank_outliers <- as.data.frame(pcadapt_snps[pcadapt_snps %in% outflank_snps])
+pcadapt_outflank_combined <- as.data.frame(outliers_pcadapt[outliers_pcadapt %in% outflank_snp_pos1])
+pcadapt_outflank_snps <- sub("^", "sp", pcadapt_outflank_combined$`outliers_pcadapt[outliers_pcadapt %in% outflank_snp_pos1]`)
+
+
+
+adapt_gwas <- cbind(adapt_POS, adapt_CHROM, adapt_BP, adapt_P) #pval_gwas
 colnames(adapt_gwas)[1] = "POS"
 colnames(adapt_gwas)[2] = "CHROM"
 colnames(adapt_gwas)[3] = "BP"
@@ -563,8 +683,22 @@ colnames(adapt_gwas)[4] = "P"
 #adapt_gwas <- na.omit(gwas)
 #gwas <- gwas[gwas$P >= 0, ]
 out_pcadapt <- sub("^", "sp", outliers_pcadapt)
-manhattan(adapt_gwas, chr="CHROM", bp="BP", snp="POS", p="P", main = "Manhattan Plot", ylim = c(0,12), cex = 0.8, suggestiveline = T, genomewideline = T, highlight = out_pcadapt) #NEED TO REPLACE OUTLIER_PCADAPT WITH SCAFFOLD_SNP POSITIONS
+manhattan(adapt_gwas, chr="CHROM", bp="BP", snp="POS", p="P", main = "Manhattan Plot", ylim = c(0,12), cex = 0.8, suggestiveline = T, genomewideline = T, highlight = pcadapt_outflank_snps)
 
+```
+
+```{r, Bayescan}
+outlierdf
+bayescan_inputfile <- as.data.frame(cbind(outlierdf[3], outlierdf[5], num_out_df))
+colnames(bayescan_inputfile) <- NULL
+rownames(bayescan_inputfile) <- NULL
+
+bayescan_test <- as.data.frame(cbind(outlierdf[3], outlierdf[5], num_out_df[, sample(1:ncol(num_out_df), 10)]))
+fwrite(bayescan_test, file = "/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population_Genomics_SP_fc27/bayescan_test.txt", append =FALSE, sep = " ", quote = TRUE, row.names = FALSE, col.names = FALSE)
+
+fwrite(bayescan_inputfile, file = "/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population_Genomics_SP_fc27/bayescan_inputfile.txt", append =FALSE, sep = " ", quote = TRUE, row.names = FALSE, col.names = FALSE)
+
+install.packages("bayescan.R")
 
 ```
 
@@ -582,7 +716,9 @@ library(mapdata)
 library(stringr)
 library(dplyr)
 library(tidyverse)
-library()
+library(raster)
+
+??mapdata
 
 usa <- map_data("usa")
 states <- map_data("state")
@@ -602,13 +738,79 @@ ca_base + theme_nothing() +
 
 
 
-
-
 ggplot(data = ca_df, mapping = aes(x = long, y = lat, group = group)) + 
                 coord_fixed(1.3) + 
                 geom_polygon(color = "black", fill = "gray") +
 geom_point(data = SampleCoordinates, colour = "red", size=Count))
+
+ll_means <- sapply(sisquoc[2:3], mean)
+sq_map2 <- get_map(location = ll_means,  maptype = "satellite", source = "google", zoom = 15)
+
+###########################################
+
+US <- getData("GADM",country="USA",level=1)
+states    <- c('California')
+california <- US[US$NAME_1 %in% states,]
+
+PNW <- US[US$NAME_1 %in% states,]
+plot(california, axes=TRUE)
+ggplot(california) + geom_polygon(data=california, aes(x=long,y=lat,group=group),
+  fill="cadetblue", color="grey") + coord_equal()
+US$NAME_1
+download.file("https://github.com/mhweber/AWRA_GIS_R_Workshop/blob/gh-pages/files/SRTM_OR.RData?raw=true",
+              "SRTM_OR.RData",
+              method="auto",
+              mode="wb")
+
+load("./SRTM_OR.RData")
+srtm <- getData('SRTM', lon=-122, lat=41)
+srtm1 <- getData('SRTM', lon=-121, lat=40)
+srtm2 <- getData('SRTM', lon=-120, lat=37.3)
+srtm3 <- getData('SRTM', lon=-118.5, lat=35)
+srtm4 <- getData('SRTM', lon=-117, lat=34)
+srtm5 <- getData('SRTM', lon=-115, lat=34)
+srtm6 <- getData('SRTM', lon=-120, lat=34)
+srtm_all <- mosaic(srtm, srtm1, srtm2, srtm3, srtm4, srtm5, srtm6, fun = mean)
+
+plot(srtm_all)
+plot(california, add=TRUE)
+
+srtm_crop_cal <- crop(srtm_all, california)
+srtm_mask_cal <- mask(srtm_crop_cal, california)
+plot(srtm_mask_cal, main="Elevation (m) in California")
+plot(california, add=TRUE)
+
+
 ```
+
+```{r, Map with georeference data}
+#https://www.youtube.com/watch?v=Of_M4kcE9yM&ab_channel=StatisticsGuideswithDrPaulChristiansen
+
+
+library(rstudioapi)
+library(ggmap)
+register_google(key = "AIzaSyCK_g3QY-OOmNogSUnWbga1DQNKdadtFO0")
+SampleCoordinates <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Map_Count.csv", stringsAsFactors = FALSE)
+
+cal_box <- make_bbox(lat = Latitude, lon = Longitude, data = SampleCoordinates)
+
+cal_big <- get_map(location = cal_box, source = "google", maptype = "terrain")
+get_map()
+cal_zoom <- get_map(location = c(lon = -121, lat = 38), zoom = 7, source = "google", maptype = "terrain")
+ggmap(cal_zoom) + 
+  geom_point(data = SampleCoordinates, mapping = aes(x = Longitude, y = Latitude, color = "blue", size = Count))
+
+get_map()
+
+
+
+ca_base + theme_nothing() + 
+  geom_polygon(data = ca_county, fill = NA, color = "white") +
+  geom_polygon(color = "black", fill = "gray") + 
+  geom_point(data = SampleCoordinates, aes(x=Longitude, y=Latitude, size=Count), inherit.aes =FALSE)
+```
+
+
 
 ```{r, GO terms}
 
@@ -616,6 +818,7 @@ geom_point(data = SampleCoordinates, colour = "red", size=Count))
 snp.gene <- read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/SP_snpgenes.gff", header=F, comment.char="#")
 #Gene Ontology text file
 GO.df <- as.data.frame(read.table("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_proteins_20200424_GO.tab", header=F, sep="\t", fill = TRUE, quote = ""))
+KOG.df <- as.data.frame(read.table("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_proteins_20200424_KOG.tab.gz", header=F, sep="\t", fill = TRUE, quote = ""))
 
 
 
@@ -671,7 +874,7 @@ pcadapt_df1
 
 pcadapt_loci <- gene_list2[gene_list2$Chrom %in% pcadapt_df1$Chromosome & gene_list2$Position %in% pcadapt_df1$Position, ]
 
-length(unique(PCAdapt_GO_terms$goName))
+
 
 PCAdapt_GO_terms <- GO.df %>% 
   filter(GO.df$proteinId %in% pcadapt_loci$Protein_ID)

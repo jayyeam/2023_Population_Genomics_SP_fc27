@@ -1,0 +1,278 @@
+---
+title: "LFMM"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r, PCA on environmental variables}
+
+outlierdf
+fulldf <- fulldata[,8:26]
+env_outdf <- as.matrix(fulldf[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ])
+colnames(env_outdf) <- c("Annual Mean Temperauture", "Mean Tempereature of Warmest Month", "Mean Temperature of Coldest Quarter", "Annual Precipitation", "Precipitation of Wettest Month", "Precipitation of Driest Month", "Precipitation Seasonality", "Precipitation of Wettest Quarter", "Precipitation of Driest Quarter", "Precipitation of Warmest Quarter", "Precipitation of Coldest Quarter", "Mean Diurnal Range", "Isothermality", "Temperature Seasonality", "Max Temperature of Warmest Month", "Min Temperature of Coldest Month", "Temperature Annual Range", "Mean Temperature of Wettest Quarter", "Mean Temperature of Coldest Quarter")
+
+env_outdf1 <- as.data.frame(env_outdf) %>% 
+  relocate("Temperature Seasonality", "Max Temperature of Warmest Month", "Min Temperature of Coldest Month", "Temperature Annual Range", "Mean Temperature of Wettest Quarter", "Mean Temperature of Coldest Quarter")
+env_outdf2 <- as.matrix(env_outdf1)
+scaled_envdf <- scale(env_outdf)
+env_pca <- prcomp(scaled_envdf, scale = TRUE)
+summary(env_pca)
+pc_loadings <- env_pca$rotation[,1:3]
+
+# view the loadings as a heatmap
+heatmap(pc_loadings, Rowv=NA, Colv=NA, scale="none")
+envPC1 <- predict(env_pca)[, 1]
+envPC2 <- predict(env_pca)[, 2]
+
+```
+
+
+```{r, LFMM}
+#https://cran.r-project.org/web/packages/lfmm/vignettes/lfmm.html
+#install.packages('lfmm')
+
+library(lfmm)
+?lfmm
+
+pc <- prcomp(num_out_df)
+plot(pc$sdev[1:20]^2, xlab = 'PC', ylab = "Variance explained")
+points(3,pc$sdev[6]^2, type = "h", lwd = 3, col = "blue")
+
+mod.lfmm <- lfmm_ridge(Y = num_out_df,
+                       X = envPC1 + envPC2,
+                       K = 3)
+pv <- lfmm_test(Y = num_out_df, 
+                 X = envPC1 + envPC2, 
+                 lfmm = mod.lfmm, 
+                 calibrate = "gif")
+pv <- as.data.frame(pv)
+
+pvalues <- pv$calibrated.pvalue 
+
+
+#Compute direct effect sizes using the lfmm_ridge function
+mod <- lfmm_ridge(Y = num_out_df,
+                  X = envPC1 + envPC2,
+                  K = 3)
+
+pred <- predict_lfmm(Y = num_out_df,
+                     X = envPC1 + envPC2,
+                     fdr.level = 0.1,
+                     mod)
+#Adjust p-value with fdr correction
+p.adj <- p.adjust(pvalues, method="fdr")
+alpha <- 0.05
+out.lfmm <- which(p.adj < alpha)
+length(out.lfmm)
+
+
+sampleID <- as.data.frame(rownames(pv))
+sampleID$rows <- seq(nrow(sampleID))
+p.out.lfmm <- sampleID[sampleID$rows %in% label_snps, ]
+p.GLM <- sampleID[sampleID$rows %in% label_snps, ]
+#Dataframe with outlier loci 
+sample.out.lfmm <- as.data.frame(p.out.lfmm[, 1])
+
+
+write.table(sample.out.lfmm, file = "LFMM.outlier.loci.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+qqplot(rexp(length(pvalues), rate = log(10)),
+       -log10(pvalues), xlab = "Expected quantile",
+       pch = 19, cex = .4)
+abline(0,1)
+
+
+threshold <- 0.005  # set the p-value threshold for labeling SNPs
+
+#Manhattan Plot 
+plot(-log10(p.adj), 
+      pch = 19, 
+      cex = .6, 
+      xlab = "snp position", ylab = "-log(pvalue)",
+      col = "grey")
+ points(out.lfmm, #highlight snps of interest
+        -log10(p.adj)[out.lfmm], 
+        type = "p", 
+        col = "blue")
+ label_snps <- which(p.adj < threshold)
+ text(out.lfmm[label_snps], -log10(pvalues)[out.lfmm][label_snps], labels = names(pvalues)[label_snps], pos = 2)
+
+
+
+```
+
+```{r, candidate genes}
+
+genes <- as.data.frame(read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_genes_20200424.gff", header=F, comment.char="#"))
+
+candidate_snps <- as.data.frame(read.csv("./LFMM.outlier.loci.csv", sep = ",", header = FALSE))
+colnames(candidate_snps)[1] <- "scaffold"
+colnames(candidate_snps)[2] <- "pos"
+write.table(candidate_snps, file = "./candidate_snps_lfmm.csv", sep = ",", col.names = TRUE)
+
+genes$V1 <-as.character(genes$V1)
+candidate_snps$scaffold <- as.character(candidate_snps$scaffold)
+scaffold_matches <- match(genes$V1, candidate_snps$scaffold)
+length(unique(scaffold_matches))
+
+candidate_genes <- genes[!is.na(scaffold_matches) & 
+                         genes$V4 <= 50 + candidate_snps$pos[scaffold_matches] & 
+                         genes$V5 >= 50 + candidate_snps$pos[scaffold_matches], ]
+
+gff_scaffolds <- unique(genes$V1)
+missing_scaffolds <- candidate_snps$scaffold[!(candidate_snps$scaffold %in% gff_scaffolds)]
+
+if (length(missing_scaffolds) > 0) {
+  message("The following scaffolds are not present in the GFF file: ", paste(missing_scaffolds, collapse = ", "))
+} else {
+  message("All scaffolds in the candidate SNP list are present in the GFF file.")
+}
+
+```
+
+```{r, KOG assingments}
+
+#removing some columns and seperating INFO column
+KOG.df <- as.data.frame(read.table("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_proteins_20200424_KOG.tab.gz", header=F, sep="\t", fill = TRUE, quote = ""))
+
+
+candidate_genes2 <- data.frame(candidate_genes$V1, candidate_genes$V4, candidate_genes$V5, candidate_genes$V3, do.call(rbind, strsplit(candidate_genes$V9, split = ";", fixed = TRUE)))
+colnames(candidate_genes2)[1] = "Chrom"
+colnames(candidate_genes2)[2] = "Start_Pos"
+colnames(candidate_genes2)[3] = "End_pos"
+colnames(candidate_genes2)[4] = "Type"
+colnames(candidate_genes2)[5] = "Name"
+colnames(candidate_genes2)[6] = "Protein_ID"
+colnames(candidate_genes2)[7] = "Product_Name"
+candidate_genes2$Protein_ID <- gsub("proteinId", "", candidate_genes2$Protein_ID)
+
+#candidate_genes3 is the cleaned df
+candidate_genes3 <- candidate_genes2[!(candidate_genes2$Type=="exon"), ]
+candidate_genes3$Protein_ID <- as.numeric(candidate_genes3$Protein_ID)
+
+
+################################################
+colnames(KOG.df)[1] = "TransciptID"
+colnames(KOG.df)[2] = "ProteinID"
+colnames(KOG.df)[3] = "KOGterm"
+colnames(KOG.df)[4] = "KOGtermDescription"
+colnames(KOG.df)[5] = "Type"
+colnames(KOG.df)[6] = "Process"
+################################################
+
+#Pull goterms that are in gene_list2 dataframe
+KOG_list <- as.data.frame(KOG.df %>% 
+  filter(KOG.df$ProteinID %in% candidate_genes3$Protein_ID))
+GO_list <- GO.df %>% 
+  filter(GO.df$proteinId %in% candidate_genes3$Protein_ID)
+
+length(unique(GO_list$proteinId))
+
+write.table(KOG_list, file = "./KOG_outlier_snps.csv", sep = ",", col.names = TRUE)
+```
+```{r, Outflank, LFMM, PCAdapat}
+outflank_snp_pos <- as.numeric(outflank_snp_pos)
+AdaptFlank_outliers <- outliers_pcadapt[outliers_pcadapt %in% outflank_snp_pos]
+
+LFMM_out_total <- out.lfmm[out.lfmm %in% AdaptFlank_outliers]
+
+
+sampleID <- as.data.frame(rownames(pv))
+sampleID$rows <- seq(nrow(sampleID))
+p.out.3way <- sampleID[sampleID$rows %in% LFMM_out_total, ]
+
+#Dataframe with outlier loci 
+sample.out.3way <- as.data.frame(p.out.3way[1])
+colnames(sample.out.3way)[1] <- "name"
+sample.out.3way$position <- gsub(".*_(\\d+)$", "\\1", sample.out.3way$name)
+sample.out.3way$name <- gsub("_\\d+$", "", sample.out.3way$name)
+
+#dataframe with scaffold column and pos column
+sample.out.3way
+colnames(sample.out.3way)[1] <- "scaffold"
+colnames(sample.out.3way)[2] <- "pos"
+
+genes$V1 <-as.character(genes$V1)
+sample.out.3way$scaffold <- as.character(sample.out.3way$scaffold)
+scaffold_matches3way <- match(genes$V1, sample.out.3way$scaffold)
+length(unique(scaffold_matches3way))
+
+candidate_genes3way <- genes[!is.na(scaffold_matches3way) & 
+                         genes$V4 <= sample.out.3way$pos[scaffold_matches3way] & 
+                         genes$V5 >= sample.out.3way$pos[scaffold_matches3way], ]
+
+
+
+cand_genes <- data.frame(candidate_genes3way$V1, candidate_genes3way$V4, candidate_genes3way$V5, candidate_genes3way$V3, do.call(rbind, strsplit(candidate_genes3way$V9, split = ";", fixed = TRUE)))
+colnames(cand_genes)[1] = "Chrom"
+colnames(cand_genes)[2] = "Start_Pos"
+colnames(cand_genes)[3] = "End_pos"
+colnames(cand_genes)[4] = "Type"
+colnames(cand_genes)[5] = "Name"
+colnames(cand_genes)[6] = "Protein_ID"
+colnames(cand_genes)[7] = "Product_Name"
+cand_genes$Protein_ID <- gsub("proteinId", "", cand_genes$Protein_ID)
+
+#candidate_genes3 is the cleaned df
+cand_genes2 <- cand_genes[!(cand_genes$Type=="exon"), ]
+cand_genes2$Protein_ID <- as.numeric(cand_genes2$Protein_ID)
+
+
+################################################
+colnames(KOG.df)[1] = "TransciptID"
+colnames(KOG.df)[2] = "ProteinID"
+colnames(KOG.df)[3] = "KOGterm"
+colnames(KOG.df)[4] = "KOGtermDescription"
+colnames(KOG.df)[5] = "Type"
+colnames(KOG.df)[6] = "Process"
+################################################
+
+#Pull goterms that are in gene_list2 dataframe
+KOG_list3way <- as.data.frame(KOG.df %>% 
+  filter(KOG.df$ProteinID %in% cand_genes2$Protein_ID))
+GO_list3way <- GO.df %>% 
+  filter(GO.df$proteinId %in% cand_genes2$Protein_ID)
+
+length(unique(KOG_list$ProteinID))
+
+
+
+
+```
+
+```{r, GLM on candidate snps}
+cols_of_interest <- p.GLM$`rownames(pv)`
+
+
+df_subset <- num_out_df[, cols_of_interest]
+df_full <- cbind(env_data, df_subset)
+
+snp_subset <- df_subset[,4]
+glm1 <- glm(snp_subset ~ wc2.1_2.5m_bio_1, data = df_full, family = poisson)
+#summary(glm1)
+
+plot_data <- data.frame(snp = snp_subset, phenotype = df_full$wc2.1_2.5m_bio_1)
+
+ggplot(plot_data, aes(x = phenotype, y = snp)) +
+  geom_jitter(width = 0.4, height = 0.2, alpha = 0.5) +
+  geom_point() +
+  geom_smooth(method = "glm", se = TRUE) +
+  xlab("Mean Annual Temperature") +
+  ylab("Allele Frequency")
+
+
+df1 <- data.frame(
+  temp = c(10,20,25,30,40),
+  biomass = c(5, 14,21,8,2)
+)
+
+ggplot(df1, aes(x=temp, y=biomass)) + 
+  geom_point(size=3) + 
+  geom_line(size =1) + 
+  labs(x="Temperature (C)", y="Biomass (mg)")
+
+```
+
+

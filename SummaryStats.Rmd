@@ -3,13 +3,6 @@ title: "Summary Statistics"
 output: html_notebook
 ---
 
-```{r, Github token}
-library(usethis)
-usethis::create_github_token()
-gitcreds::gitcreds_set()
-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
-
-```
 
 ```{r}
 load("/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population_Genomics_SP_fc27/SummaryStats.RData")

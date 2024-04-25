@@ -7,14 +7,7 @@ This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute
 
 Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*.
 
-```{r, github token}
 
-library(usethis)
-usethis::create_github_token()
-gitcreds::gitcreds_set()
-# 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 accesstoken won't expire
-
-```
 
 ```{r, Assigning Gene Ontology}
 library(dplyr)

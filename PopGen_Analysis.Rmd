@@ -6,6 +6,9 @@ output: html_notebook
 Github token: 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
 
 ```{r}
+
+load("/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population_Genomics_SP_fc27/PopGen.RData")
+
 library(dplyr)
 library(tidyr)
 library(data.table)
@@ -14,28 +17,40 @@ library(viridis)
 library(zoo)
 library(tidyverse)
 library(raster)
-library(rgdal)
+
 library(ggpubr)
 library(broom)
+install.packages("LDlinkR")
 library(AICcmodavg)
 library(rstatix)
 library(vegan)
 library(factoextra)
+
 library(qqman) 
 library(SNPfiltR)
 library(LDlinkR)
+library(data.table)
+library(devtools)
 
+library(factoextra)
+#if (!require("BiocManager", quietly = TRUE))
+    #install.packages("BiocManager")
 
+#BiocManager::install("LEA")
+library(LEA)
+library(tidyverse)
+library(raster)
+
+library(data.table)
 ```
 
 ```{r, read files}
 table <- fread(file = "/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/SP.merged.filtered.table.012.tsv", sep = '\t', header = FALSE)
 indv <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/sampleID.csv")
 pos <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/SP.merged.filtered.table.012.pos.tsv", sep = '\t', header = FALSE)
-coordinates <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/SNPlocation.csv")
+sample.meta.data <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Sample_Meta_data.csv", header = TRUE)
 Bio.clim.t.mean.files <- list.files("/Users/jyeam/Documents/BioClim_variables_2.5m_bio", ".tif", full.names=TRUE)
 host <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/HostType.csv")
-specimen <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/SpecimenID.csv")
 population <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Pop_Gen_DATA.csv")
 ```
 
@@ -46,20 +61,18 @@ pos <- subset(pos, select = -c(V2))
 geno <- subset(table, select = -c(V1))
 colnames(geno) <- pos$V1
 
-geno.frame <- cbind(indv, geno) %>% 
-  as.data.frame()
+sample.meta.data <- sample.meta.data[,1:6]
+cut.geno <- geno[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ]
 
-coordinates_df <- cbind(coordinates, geno.frame)
-coordinates_df <- subset(coordinates_df, select = -c(Sample))
-
+geno.df <- cbind(sample.meta.data, cut.geno)
 ##stack them together, this is the critical step
 BIOCLIM.stack <- stack(Bio.clim.t.mean.files)
 library(dplyr)
 
-coord_site <- coordinates_df %>% 
-  dplyr::select(Sample,Longitude,Latitude) %>% 
+coord_site <- geno.df %>% 
+  dplyr::select(Sample_ID,Longitude,Latitude) %>% 
   na.omit() %>% 
-  column_to_rownames(var='Sample') %>% 
+  column_to_rownames(var='Sample_ID') %>% 
   data.frame
 # extract values for given Long/lat as specified for each coordinate
 BIOCLIM_ext <- raster::extract(BIOCLIM.stack, coord_site, df=T)
@@ -68,33 +81,76 @@ BIOCLIM_character <- BIOCLIM_ext %>%
 ##now add the identifying domainIDback on to this: 
 clim_data_NEON<- cbind(coord_site,BIOCLIM_character) %>% 
   dplyr::select(-ID) %>% 
-  rownames_to_column(var="Sample")
+  rownames_to_column(var="Sample_ID")
+clim_data_NEON <- subset(clim_data_NEON, select = -c(Sample_ID, Latitude, Longitude))
 
 coordinates_df[1:3,541745:541752]
 ##confirm that the rows are retained as desired: 
-full <- cbind(coordinates_df,clim_data_NEON) %>% #combine datasets
+full <- cbind(geno.df,clim_data_NEON) %>% #combine datasets
   relocate(wc2.1_2.5m_bio_1:wc2.1_2.5m_bio_9, .before = scaffold_1_6796) #moving bioclim data to front
   # this was removed from full command %>% dplyr::select(-c(Sample.1, Longitude.1, Latitude.1))
-  
-fulldata1 <- cbind(host,specimen, population$Population, full)
-colnames(fulldata1)[5] <- "Population"
-fulldata2 <- fulldata1[,1:541776] 
-fulldata <- dplyr::select(fulldata2,-Sample.ID) %>% 
-  relocate(Sample, SpecimenID)
+pop <- population[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ]
+popgen.df1 <- cbind(full[,1:5], pop$Population, full[,6:ncol(full)])
+colnames(popgen.df1)[6] <- "Cluster_Pop"
 
-
-write.table(clim_data_NEON,file="clim_data_NEON.csv",sep=",")
-
-
-numerical <- fulldata[,27:ncol(fulldata)]
-numdf <- numerical[ , which(apply(numerical, 2, var) != 0)] #remove zero variance columns from dataset
+outlierdf <- popgen.df1[ , which(apply(popgen.df1[,24:ncol(popgen.df1)], 2, var) != 0)]
+final.df <- outlierdf[-c(17,59),]
+num_out_df <- outlierdf[,27:ncol(outlierdf)]
+remove_zero_var_cols <- function(num_out_df) {
+  # Calculate standard deviation for each column
+  sd_values <- apply(num_out_df, 2, sd)
+  # Find columns with zero variation
+  zero_var_cols <- names(sd_values[sd_values == 0])
+  # Remove columns with zero variation
+  df_clean <- num_out_df[, !names(num_out_df) %in% zero_var_cols]
+  return(df_clean)
+}
+# Remove columns with zero variation
+df_clean <- remove_zero_var_cols(num_out_df)
 
 ```
 
 ```{r, PCA}
 
+out_df <- outlierdf #%>% 
+  #relocate(Sample) 
+library(viridis)
+rownames(out_df) <- NULL 
+numerical_out <- outlierdf[,27:ncol(outlierdf)]
+num_out_df <- numerical_out[ , which(apply(numerical_out, 2, var) != 0)] #remove zero variance columns from dataset
+num_out_df[ ,540520:540523]
+save(num_out_df, file = "num_out_df.Rda")
+pca_out <- prcomp(df_clean, scale = TRUE)
+summary(pca_out)
+pc_loadings1 <- pca_out$rotation[,1:3]
 
-pca_result <- prcomp(numdf, scale = TRUE)
+# view the loadings as a heatmap
+heatmap(pc_loadings1, Rowv=NA, Colv=NA, scale="none")
+PCA1 <- fviz_pca_ind(pca_out,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+df_out1 <- data.frame(pca_out$x)
+write.table(df_out1, file = "PCA_coordinates.csv", sep = ",", row.names = TRUE)
+write.table(gen.df, file = "multilocus_genotype_table.csv", sep=",")
+df_out1$plotx <- df_out1[,1]
+df_out1$ploty <- df_out1[,2]
+df_out1$plotz <- df_out1[,3]
+#Calculate PC scores
+eigenvalues <- pca_out$sdev^2
+prop_eigen <- eigenvalues/sum(eigenvalues)
+library(viridis)
+Latitude = final.df$Latitude
+Host = final.df$Host
+#https://sjmgarnier.github.io/viridis/reference/scale_viridis.html
+p1 <- ggplot(df_out1, aes(x=plotx, y = ploty, color=Latitude)) + geom_point(size = 3.0, aes(shape = Host)) + xlab("PC1 (3.26%)") + ylab("PC2 (2.82%)") + scale_colour_gradientn(colours = viridis(100)) + theme_bw() + theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
+p1
+tiff( "unpruned.PCA", units="in", width=6, height=4, res=400)
+p1
+dev.off()
+################ REST IS EXTRA ################################
+pca_result <- prcomp(num_out_df, scale = TRUE)
 summary(pca_result)
 #http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/118-principal-component-analysis-in-r-prcomp-vs-princomp/
 PCA <- fviz_pca_ind(pca_result,
@@ -127,34 +183,53 @@ PCAmaster <- fviz_pca_ind(pca_master,
              repel = TRUE     # Avoid text overlapping
              )
 
-fulldata[19, 4] = "Monterey"
-outlierdf <- fulldata[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ]
-out_df <- outlierdf %>% 
-  relocate(Sample) 
+#fulldata[19, 4] = "Monterey"
+#0utlierdf <- fulldata[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ]
 
-rownames(out_df) <- NULL 
-numerical_out <- out_df[,27:ncol(out_df)]
-num_out_df <- numerical_out[ , which(apply(numerical_out, 2, var) != 0)] #remove zero variance columns from dataset
-save(num_out_df, file = "num_out_df.Rda")
-pca_out <- prcomp(num_out_df, scale = TRUE)
+outlierdf
+```
 
-PCA1 <- fviz_pca_ind(pca_out,
-             col.ind = "cos2", # Color by the quality of representation
-             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
-             repel = TRUE     # Avoid text overlapping
-             )
-df_out1 <- data.frame(pca_out$x)
-df_out1$plotx <- df_out1[,1]
-df_out1$ploty <- df_out1[,2]
-#Calculate PC scores
-eigenvalues <- pca_out$sdev^2
-prop_eigen <- eigenvalues/sum(eigenvalues)
+```{r, Clone correction}
+#https://grunwaldlab.github.io/poppr/articles/mlg.html
+#https://grunwaldlab.github.io/poppr/articles/mlg.html#multilocus-genotype-flavors-1
+library(devtools)
+library(poppr)
 
-Latitude = outlierdf$Latitude
-Host = outlierdf$Host
-#https://sjmgarnier.github.io/viridis/reference/scale_viridis.html
-p1 <- ggplot(df_out1, aes(x=plotx, y = ploty, color=Latitude)) + geom_point(size = 3.0, aes(shape = Host)) + xlab("PC1 (3.14%)") + ylab("PC2 (2.82%)") + scale_colour_gradientn(colours = viridis(100)) + theme_bw() + theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
-p1
+
+num.geno <- df_clean
+num.pop <- outlierdf$Geographic_Pop
+num.coord <- cbind(outlierdf$Latitude, outlierdf$Longitude) %>% 
+  as.data.frame()
+colnames(num.coord) <- c("X", "Y")
+
+
+genind.obj <- df2genind(num.geno, ploidy=2, pop=num.pop, sep = "/", NA.char = "_")
+genind.obj$pop
+genclone <- as.genclone(genind.obj)
+genclone$other <- as.data.frame(num.pop)
+strata(genclone) <- genclone$other
+
+#perform the clone correction
+mlg(genclone)
+popNames(genclone)
+genclone.pop <- clonecorrect(genclone, strata = ~num.pop)
+mlg(genclone.pop)
+popNames(genclone.pop)
+
+testfilter <- filter_stats(genclone, distance = bitwise.dist, plot = TRUE)
+print(testfilter) #gives you all statistics from testfilter
+thresh <- cutoff_predictor(testfilter$farthest$THRESHOLDS) #Assigns threshold from farther neighbor
+thresh
+mlg.filter(genclone, distance = bitwise.dist) <- thresh #assigns mlg based on new filter
+genclone
+mlg.table(genclone)
+gen.df <- as.data.frame(mlg.table(genclone))
+write.table(gen.df, file = "multilocus_genotype_table.csv", sep=",")
+mll(genclone)
+mlg.id(genclone)[["65"]]
+mlg.id(genclone)[["6"]]
+
+
 
 ```
 
@@ -168,101 +243,26 @@ TEMP_RANGE = as.numeric(outlierdf$wc2.1_2.5m_bio_7)
 PRECIP = as.numeric(outlierdf$wc2.1_2.5m_bio_12)
 SEASONAL_PRECIP = as.numeric(outlierdf$wc2.1_2.5m_bio_15)
 Host <- as.factor(outlierdf$Host)
-
+host_df
 outlierdf$Bishop <- ifelse(outlierdf$Host == 'Bishop', 1, 0)
 outlierdf$Monterey <- ifelse(outlierdf$Host == 'Monterey', 1, 0)
 outlierdf <- outlierdf %>% 
   relocate(Bishop, Monterey, .after = Host) %>% 
   relocate(Sample)
+library(vegan)
+adonis <- adonis2(num_out_df ~ wc2.1_2.5m_bio_1 + wc2.1_2.5m_bio_2 + wc2.1_2.5m_bio_3 + wc2.1_2.5m_bio_4 + wc2.1_2.5m_bio_5 + wc2.1_2.5m_bio_6 + wc2.1_2.5m_bio_7 + wc2.1_2.5m_bio_8 + wc2.1_2.5m_bio_9 + wc2.1_2.5m_bio_10 + wc2.1_2.5m_bio_11 + wc2.1_2.5m_bio_12 + wc2.1_2.5m_bio_13 + wc2.1_2.5m_bio_14 + wc2.1_2.5m_bio_15 + wc2.1_2.5m_bio_16 + wc2.1_2.5m_bio_17 + wc2.1_2.5m_bio_18 + wc2.1_2.5m_bio_19 + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
 
-#adonis <- adonis(num_out_df ~ MAT + ISO + SEASONAL_TEMP + TEMP_RANGE + PRECIP + SEASONAL_PRECIP + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
+adonis1 <- adonis2(num_out_df ~ wc2.1_2.5m_bio_1 + wc2.1_2.5m_bio_3 + wc2.1_2.5m_bio_8 ++ wc2.1_2.5m_bio_17 + wc2.1_2.5m_bio_18 + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
 
-#adonis1 <- adonis(num_out_df ~ MAT + ISO + PRECIP + SEASONAL_PRECIP, outlierdf, permutations = 999, method = "bray", strata = NULL)
+adonis3 <- adonis(num_out_df ~ wc2.1_2.5m_bio_1 + wc2.1_2.5m_bio_3 + wc2.1_2.5m_bio_8 + wc2.1_2.5m_bio_13 + wc2.1_2.5m_bio_15, outlierdf, permutations = 999, method = "bray", strata = NULL)
 
-adonis2 <- adonis(num_out_df ~ MAT + ISO + PRECIP + SEASONAL_PRECIP + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
+
+
+adonis2 <- adonis(num_out_df ~ MAT + ISO + PRECIP + Host, outlierdf, permutations = 999, method = "bray", strata = NULL)
 
 
 library(gdm)
 citation("gdm")
-
-```
-
-```{r, Dendrogram}
-#http://www.sthda.com/english/wiki/beautiful-dendrogram-visualizations-in-r-5-must-known-methods-unsupervised-machine-learning
-# other that I didn't really use: https://www.rpubs.com/dvallslanaquera/clustering
-install.packages('ggdendro')
-install.packages('ape')
-if(!require(dendextend)) install.packages("dendextend")
-library("dendextend")
-?dendextend
-library(ggdendro)
-library(cluster)
-library(factoextra)
-
-dendrodata <- outlierdf[,-1]
-rownames(dendrodata) <- dendrodata[,1]
-dendrodf <- as.data.frame(dendrodata[,27:ncol(dendrodata)])
-dendrodf[ , 541740:541747]
-dd <- dist(scale(dendrodf), method = "euclidean")
-hc <- hclust(dd, method = "ward.D2")
-
-###############
-fulldata
-fulldata_num <- fulldata[,26:ncol(fulldata)]
-#https://stackoverflow.com/questions/27485549/how-to-colour-the-labels-of-a-dendrogram-by-an-additional-factor-variable-in-r
-hcd <- as.dendrogram(hc)
-labels_colors(hcd)
-par(mfrow = c(1,2))
-plot(hcd, main = "Original dend")
-#adding some color by tree association
-colors_to_use <- unclass(as.factor(dendrodata[,3]))
-colors_to_use <- colors_to_use[order.dendrogram(hcd)]
-labels_colors(hcd) <- colors_to_use
-plot(hcd, main = "Cluster Dendrogram Grouped by Host Association")
-###############
-
-
-plot(hclust(dd, method = "ward.D2"))
-rect.hclust(hc, k=4, border = 2:5)
-
-
-ggdendrogram(hc, rotate = FALSE, size = 2)
-ddata <- dendro_data(hcd, type = "rectangle")
-dendro_plot <- ggplot(segment(ddata)) +
-  geom_segment(aes(x = x, y = y, xend = xend, yend = yend)) + 
-  coord_flip() + 
-  scale_y_reverse(expand = c(0.2, 0))
-
-plot(hc)
-rect.hclust(hc, k = 4, border = 2:5)
-hcd <- as.dendrogram(hc)
-plot(hc)
-plot(hcd)
-png("ClusterDendrogram.png",width=13,height=5,units="in",res=4000)
-plot(hc)
-dev.off()
-dendrogram <- plot(hcd)
-
-  
-
-labels(hcd) <- masterdata$SpecimenID
-labels(hcd)
-plot(hc, labels = NULL, cex=0.8, hang = 0.1, 
-     main = "Cluster dendrogram", sub = NULL,
-     xlab = NULL, ylab = "Height")
-
-#Divide into Subgroups
-sub_grp <- cutree(hc, k =4)
-table(sub_grp)
-
-outlierdf[19, 4] = "Monterey"
-
-plot(as.phylo(hc), cex = 0.5, label.offset = 0.5)
-
-plot(as.phylo(hc), type = "unrooted", cex = 0.6,
-     no.margin = TRUE)
-
-nodePar <- list(lab.cex = 0.6, pch = c(NA, 19), cex = 0.7, col = "blue")
 
 
 ```
@@ -280,7 +280,6 @@ Bishopdf <- Bishopdf[ , which(apply(Bishopdf, 2, var) != 0)]
 bishopdf <- cbind(Sample, Bishopdf)
 
 bishopenv <- subset(Bishop, select = c(Sample, Latitude, Longitude, wc2.1_2.5m_bio_1, wc2.1_2.5m_bio_12, wc2.1_2.5m_bio_4, wc2.1_2.5m_bio_3, wc2.1_2.5m_bio_15))
-Bishop_sub <- df.sample
 Bishop_sub <- bishopdf[,1:50000]
 
 #Create Monterey df
@@ -358,37 +357,364 @@ Figure1 <- ggarrange(Geographic_distance_Bishop, Precipitation_reduced_Bishop, G
 
 ```
 
+```{r, LD-pruned PCA and Admxiture}
+#https://www.bioconductor.org/packages/devel/bioc/vignettes/SNPRelate/inst/doc/SNPRelate.html
+install.packages("vcfR")
+library(vcfR)
+library(adegenet)
+#install.packages("adegraphics")
+library(adegraphics)
+library(pegas)
+install.packages("StAMPP")
+library(StAMPP)
+library(lattice)
+library(gplots)
+library(ape)
+library(ggmap) 
+library(LEA)
+library(devtools)
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+library(viridis)
+BiocManager::install("gdsfmt")
+library(gdsfmt)
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("SNPRelate")
+install.packages("SNPRelate")
+library(SNPRelate)
+library(calibrate)
+library(stringr)
+
+vcf.fn <- "./SP70.merged.filtered.vcf"
+snpgdsVCF2GDS(vcf.fn, "vcf.gds", method="biallelic.only")
+snpgdsSummary("vcf.gds")
+#To close the file after you create it
+#showfile.gds(closeall=TRUE) 
+genofile <- snpgdsOpen("./vcf.gds", readonly= FALSE)
+add.gdsn(genofile, "pop_code", c(4,1,1,1,1,1,1,1,2,4,2,1,1,1,1,1,1,1,4,3,4,4,4,1,1,1,2,2,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,2,2,4,2,2,1,4,1,4,4,4,4,3,1,1,1,1,4,4,3,3,3,3,3))
+sample.id <- read.gdsn(index.gdsn(genofile, "sample.id"))
+set.seed(1000)
+snpset <- snpgdsLDpruning(genofile, autosome.only = FALSE,remove.monosnp = TRUE, ld.threshold=0.2, verbose = FALSE)
+
+snpset.id <- unlist(snpset)
+str(snpset.id)
+View(snpset)
+scaffold_id <- attr(snpset.id, "names")
+snpset_df <- as.data.frame(snpset.id)
+snpset_df$scaffold <- scaffold_id
+snpset_df$scaffold  <-gsub("chr","",as.character(snpset_df$scaffold))
+LDsnps_df <- snpset_df %>%
+  relocate(scaffold)
+LDsnps_df$sample <- str_c(LDsnps_df$scaffold, '_', LDsnps_df$snpset.id)
+new_LD <- as.character(snpset_df$snpset.id)
+LD_df <- df_clean[, grepl(new_LD, names(df_clean))]
+LD_df <- df_clean[, which((names(df_clean) %in% snpset_df$snpset.id) ==TRUE)]
+LD_df <- df_clean[, grep(paste(new_LD), names(df_clean), value = TRUE)]
+#RUN PCA on LD_pruned dataset
+df <- data.frame(
+  column1_name = 1:5,
+  column2_name = 6:10,
+  another_column = 11:15,
+  some_column = 16:20,
+  additional_column = 21:25
+)
+sample.id <- read.gdsn(index.gdsn(genofile, "sample.id"))
+genotype <- read.gdsn(index.gdsn(genofile, "genotype"))
+pca <- snpgdsPCA(genofile, sample.id = NULL, snp.id=snpset.id, autosome.only = FALSE, num.thread=2, verbose= TRUE)
+pc.percent <- pca$varprop*100
+head(round(pc.percent, 2))
+
+pop_code<- read.gdsn(index.gdsn(genofile, "pop_code"))
+head(cbind(sample.id, pop_code))
+
+#Make a dataframe
+tab <- data.frame(sample.id = pca$sample.id,
+    pop = factor(pop_code)[match(pca$sample.id,sample.id)],
+    EV1 = pca$eigenvect[,1],    # the first eigenvector
+    EV2 = pca$eigenvect[,2],    # the second eigenvector
+    stringsAsFactors = FALSE)
+
+plot(tab$EV2, tab$EV1, xlab="eigenvector 2", ylab="eigenvector 1")
+Host <- outlierdf$Host
+LD_pruned_pca <- ggplot(tab, aes(x=EV1, y = EV2, color=Latitude)) + geom_point(size = 3.5, aes(shape = Host)) + xlab("PC1 (3.14%)") + ylab("PC2 (2.82%)") + scale_colour_gradientn(colours = viridis(100)) + theme_bw() + theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
+LD_pruned_pca
+library(ggplot2)
+tiff("LD-pruned_PCA.tiff", units="in", width=6, height=4, res=400)
+LD_pruned_pca
+dev.off()
+
+```
+
+```{r, LEA Admixture}
+library(LEA)
+library
+
+write.lfmm(LD_df, "genotypes_LD.lfmm")
+write.geno(LD_df, "genotypes.geno")
+
+#Trying to do this for bishops only
+bishop_df <- cbind(outlierdf$Host, LD_df)
+colnames(bishop_df)[1] <- "Host"
+native_pop <- bishop_df[bishop_df$Host == 'Bishop', ]
+native_pop <-native_pop[, -1]
+write.geno(native_pop, "nativegenotypes.geno")
+bishop_order <- outlierdf[outlierdf$Host == 'Bishop', ]
+bishop_order <-bishop_order$sampleID
+
+project.native = snmf("nativegenotypes.geno",
+K = 1:10,
+entropy = TRUE,
+repetitions = 2,
+project = "new")
+plot(project.native, col = "blue", pch = 19, cex = 1.2)
+project.bishop = load.snmfProject("nativegenotypes.snmfProject")
+project = load.snmfProject("genotypes.snmfProject")
+
+#remove.snmfProject("genotypes.snmfProject")
+best = which.min(cross.entropy(project, K = 3))
+my.colors <- c("tomato", "lightblue",
+"olivedrab", "gold")
+
+barchart(project.bishop, K = 3, run = best,
+border = NA, space = 0,
+col = my.colors,
+xlab = "Individuals",
+ylab = "Ancestry proportions",
+main = "Ancestry matrix") -> bp
+axis(1, at = 1:length(bp$order),
+labels = bp$order, las=2, #change to county$SpecimenID for normal plot of all samples
+cex.axis = .4)
+
+barchart(project, K = 4, run = best,
+border = NA, space = 0,
+col = my.colors,
+xlab = "Individuals",
+ylab = "Ancestry proportions",
+main = "Ancestry matrix") -> bp
+axis(1, at = 1:length(bp$order),
+labels = county$SpecimenID, las=2,
+cex.axis = .4)
+
+bp$order
+county <- data.frame(outlierdf$SpecimenID)
+colnames(county) <- c("SpecimenID")
+county <- tibble::rownames_to_column(county, var = "RowNames")
+county$SpecimenID <- county$SpecimenID[match(bp$order, county$RowNames)]
+county
+county_order <- cbind(county, bp$order) 
+dforder <- county_order %>% 
+  relocate(`bp$order`)
+colnames(dforder)[1] = "admixture_order"
+
+outlierdf[,27:ncol(outlierdf)]
+write.lfmm(outlierdf[,27:ncol(outlierdf)], "genotypes_full.lfmm")
+write.geno(outlierdf[,27:ncol(outlierdf)], "genotypes_full.geno")
+
+#### Running with all samples #####
+project.full = snmf("genotypes_full.geno",
+K = 1:10,
+entropy = TRUE,
+alpha = 100,
+repetitions = 10,
+project = "new")
+
+plot(project.full, col = "blue", pch = 19, cex = 1.2)
+
+bp$order <- outlierdf$County
+best = which.min(cross.entropy(project.full, K = 4))
+my.colors <- c("tomato", "lightblue",
+"olivedrab", "gold")
+
+barchart(project.full, K = 4, run = best,
+border = NA, space = 0,
+col = my.colors,
+xlab = "Individuals",
+ylab = "Ancestry proportions",
+main = "Ancestry matrix") -> bp
+axis(1, at = 1:length(bp$order),
+labels = bp$order, las=2,
+cex.axis = .4)
+
+
+##### Removed two outliers ###############
+asdf <- outlierdf[-c(59,60),]
+LD_df
+write.geno(final.df[,27:ncol(LD_df)], "asdf.geno")
+project.asdf = snmf("asdf.geno",
+K = 1:6,
+entropy = TRUE,
+repetitions = 2,
+project = "new")
+plot(project.asdf, col = "blue", pch = 19, cex = 1.2)
+best = which.min(cross.entropy(project.asdf, K = 2))
+my.colors <- c("tomato", "lightblue",
+"olivedrab", "gold")
+
+bp$order <- asdf$County
+asdf$County
+plot(project.asdf, col = "blue", pch = 19, cex = 1.2)
+
+barchart(project.asdf, K = 3, run = best,
+border = NA, space = 0,
+col = my.colors,
+xlab = "Individuals",
+ylab = "Ancestry proportions",
+main = "Ancestry matrix") -> bp.adj
+axis(1, at = 1:length(bp$order),
+labels = bp$order, las=2,
+cex.axis = .4)
+
+bp.adj <- c("4, 5,  6,  7,  8, 16, 17, 26, 60,  2,  3,  9, 10, 11, 12, 13, 14, 15, 18, 21, 27, 31, 43, 48, 49, 50, 51, 52, 53, 54, 55, 59, 63, 64, 65, 67, 66, 61, 62, 1, 19, 20, 22, 23, 24, 25, 28, 29, 30, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 46, 47, 56, 57, 58")
+
+region <- data.frame(asdf$County)
+colnames(region) <- c("SpecimenID")
+region <- tibble::rownames_to_column(region, var = "RowNames")
+region$SpecimenID <- region$SpecimenID[match(bp$order, region$RowNames)]
+region
+region_order <- cbind(region, bp$order) 
+region.df <- region_order %>% 
+  relocate(`bp$order`)
+colnames(region.df)[1] = "admixture_order"
+
+```
+
+```{r, sNMF}
+
+#https://connor-french.github.io/intro-pop-structure-r/
+  
+project.full = snmf("genotypes_full.geno",
+K = 1:5,
+entropy = TRUE,
+repetitions = 1,
+project = "new")
+plot(project.full, col = "blue", pch = 19, cex = 1.2)
+q_mat <- LEA::Q(project.full, K = 4, run = 4)
+colnames(q_mat) <- paste0("P", 1:4)
+
+# convert the q matrix to a data frame
+q_df <- q_mat %>% 
+  as_tibble() %>% 
+  # add the pops data for plotting
+  mutate(individual = outlierdf$County,
+         region = outlierdf$Geographic_Pop,
+         order = outlierdf$Sample_ID)
+q_df
+
+q_df_long <- q_df %>% 
+  # transform the data to a "long" format so proportions can be plotted
+  pivot_longer(cols = starts_with("P"), names_to = "pop", values_to = "q") 
+
+q_df_prates <- q_df_long %>% 
+  # arrange the data set by the plot order indicated in Prates et al.
+  arrange(order) %>% 
+  # this ensures that the factor levels for the individuals follow the ordering we just did. This is necessary for plotting
+  mutate(individual = forcats::fct_inorder(factor(individual)))
+
+q_df_ordered <- q_df_long %>% 
+  # assign the population assignment according to the max q value (ancestry proportion) and include the assignment probability of the population assignment
+  group_by(individual) %>%
+  mutate(likely_assignment = pop[which.max(q)],
+         assignment_prob = max(q)) %>%
+  # arrange the data set by the ancestry coefficients
+  arrange(likely_assignment, assignment_prob) %>% 
+  # this ensures that the factor levels for the individuals follow the ordering we just did. This is necessary for plotting
+  ungroup() %>% 
+  mutate(individual = forcats::fct_inorder(factor(individual)))
+
+q_df_ordered
+
+my.colors <- c("tomato", "lightblue",
+"olivedrab", "gold")
+
+
+
+q_df_prates %>% 
+  ggplot() +
+  geom_col(aes(x = individual, y = q, fill = pop)) +
+  scale_fill_manual(values = my.colors, labels = c("AF", "Eam", "Wam")) +
+  #scale_fill_viridis_d() +
+  labs(fill = "Region") +
+  theme_minimal() +
+  # some formatting details to make it pretty
+  theme(panel.spacing.x = unit(0, "lines"),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        strip.background = element_rect(fill = "transparent", color = "black"),
+        panel.background = element_blank(),
+        axis.title = element_blank(),
+        panel.grid = element_blank()
+        )
+
+
+```
+
+
+
 ```{r, GLM}
 
-glm_data <- as.data.frame(num_out_df[, sample(1:ncol(num_out_df))])
-env_data1 <- as.data.frame(cbind(env_data, glm_data))
-
+glm_data1 <- as.data.frame(num_out_df[ ,1:100000])
+glm_data2 <- as.data.frame(num_out_df[ ,100001:200000])
+glm_data3 <- as.data.frame(num_out_df[ ,200001:300000])
+glm_data4 <- as.data.frame(num_out_df[ ,300001:400000])
+glm_data5 <- as.data.frame(num_out_df[ ,400001:500000])
+glm_data6 <- as.data.frame(num_out_df[ ,500000:ncol(num_out_df)])
+env_data1 <- as.data.frame(cbind(env_data, glm_data1))
+env_data
 Latitude = as.numeric(outlierdf$Latitude)
 Longitude = as.numeric(outlierdf$Longitude)
 colnames(env_data)[4] = "MAT"
-colnames(env_data)[5] = "Annual Precipitation"
-colnames(env_data)[6] = "Temp Seasonality"
-colnames(env_data)[7] = "Max Temp"
-colnames(env_data)[8] = "Annual Temp Range"
+colnames(env_data)[5] = "Annual_Precipitation"
+colnames(env_data)[6] = "Temp_Seasonality"
+colnames(env_data)[7] = "Max_Temp"
+colnames(env_data)[8] = "Annual_Temp_Range"
 colnames(env_data)[9] = "Isothermality"
-colnames(env_data)[10] = "Precipation of Wettest Month"
-colnames(env_data)[11] = "Precipitation Seasonality"
+colnames(env_data)[10] = "Precipation_of_Wettest_Month"
+colnames(env_data)[11] = "Precipitation_Seasonality"
 env_data
 
 snp_glm1 <- glm(glm_data[, 1] ~ Latitude, data=env_data1,family=binomial())
 snp_glm1 <- glm(glm_data[, 1] ~ Latitude, data=env_data1,family=binomial())
 
-write.table(env_data1, file = "env_data.csv", sep=",")
-fwrite(glm_data, file = "glm_data_full.csv", sep=",", row.names = FALSE)
+write.table(env_data, file = "envivornment_data.csv", sep=",")
+fwrite(glm_data1, file = "glm_data1.csv", sep=",", row.names = FALSE)
+fwrite(glm_data2, file = "glm_data2.csv", sep=",", row.names = FALSE)
+fwrite(glm_data3, file = "glm_data3.csv", sep=",", row.names = FALSE)
+fwrite(glm_data4, file = "glm_data4.csv", sep=",", row.names = FALSE)
+fwrite(glm_data5, file = "glm_data5.csv", sep=",", row.names = FALSE)
+fwrite(glm_data6, file = "glm_data6.csv", sep=",", row.names = FALSE)
+
+#Read in output files
+glm_res1 <- as.data.frame(fread("./glm_out/glm1.res.csv", header=T, sep=",", fill = TRUE))
+glm_res2 <- as.data.frame(fread("./glm_out/glm2.res.csv", header=T, sep=",", fill = TRUE))
+glm_res3 <- as.data.frame(fread("./glm_out/glm3.res.csv", header=T, sep=",", fill = TRUE))
+glm_res4 <- as.data.frame(fread("./glm_out/glm4.res.csv", header=T, sep=",", fill = TRUE))
+glm_res5 <- as.data.frame(fread("./glm_out/glm5.res.csv", header=T, sep=",", fill = TRUE))
+glm_res6 <- as.data.frame(fread("./glm_out/glm6.res.csv", header=T, sep=",", fill = TRUE))
+# combine them all by rows
+glm_res <- as.data.frame(rbind(glm_res1, glm_res2, glm_res3, glm_res4, glm_res5, glm_res6))
+
+
+glm.p_adj_fdr <- p.adjust(glm_res$p.val, method="BH")
+sig_snps <- which(glm.p_adj_fdr < 0.5)
+
+print(glm.p_adj_fdr)
+print(sig_snps)
+length(which(glm.pval.corrected < 0.05))
+length(which(pval.glm < 0.01))
+
+glm_padj <- p.adjust(glm_res$p.val, method="bonferroni")
+alpha <- 0.05
+glm_outliers <- which(glm_padj < alpha)
+length(glm_outliers)
 
 
 ```
 
 ```{r, GWAS}
 #https://adegenet.r-forge.r-project.org/files/Leuven2014/practical-GWAS.pdf
-install.packages("glmnet", dep=TRUE)
-install.packages('ade4')
-install.packages('Matrix')
+
 library(ade4)
 library(adegenet)
 library(stats)
@@ -433,7 +759,7 @@ add.scatter.eig(pca1$eig,4,1,2, ratio=.24, posi="topleft")
 pval <- apply(snps, 2, function(e)
   fisher.test(table(factor(e, levels=c(0,1)), phen))$p.value)
 #Corrected p-value
-pval.corrected <- p.adjust(pval, method="fdr")
+pval.corrected <- as.data.frame(p.adjust(pval, method="fdr"))
 length(which(pval.corrected < 0.05))
 
 snps.selected.univariate <- which(pval.corrected < 0.05)
@@ -468,13 +794,7 @@ cex = 0.5,
 main="Manhattan plot: Fisher's exact test with FDR",
 xlab="SNPs", ylab="Corrected -log10(p-value)")
 
-
-#Manhattan qqman package
-pval_df <- as.data.frame(jitter.pval)
-pval_gwas <- as.numeric(pval_df$jitter.pval)
-snp_pos <- rownames(pval_df)
-
-GWAS <- cbind(adapt_POS, adapt_CHROM, adapt_BP, jitter.pval) #pval_gwas
+GWAS <- cbind(adapt_POS, adapt_CHROM, adapt_BP, pval.corrected) #pval_gwas
 colnames(GWAS)[1] = "POS"
 colnames(GWAS)[2] = "CHROM"
 colnames(GWAS)[3] = "BP"
@@ -483,7 +803,7 @@ colnames(GWAS)[4] = "P"
 GWAS <- GWAS[gwas$P >= 0, ]
 GWAS <- na.omit(GWAS)
 out_pcadapt <- sub("^", "sp", outliers_pcadapt)
-manhattan(GWAS, chr="CHROM", bp="BP", snp="POS", p="P", main = "Manhattan Plot", ylim = c(0,6), cex = 0.8, suggestiveline = T, genomewideline = T, highlight = pcadapt_outflank_snps) #NEED TO REPLACE OUTLIER_PCADAPT WITH SCAFFOLD_SNP POSITIONS
+manhattan(GWAS, chr="CHROM", bp="BP", snp="POS", p="P", main = "Manhattan Plot", ylim = c(0,2.2), cex = 0.8, suggestiveline = T, genomewideline = T, highlight = pcadapt_outflank_snps)
 
 
 
@@ -506,7 +826,14 @@ num_matrix <- data.matrix(num_out_df, rownames.force = NA)
 colnames(num_matrix) <- NULL
 
 outlierdf
-ind <- outlierdf[,4]
+outflank_df <- outlierdf[, -c(7)]
+pcadapt_pop <- read.csv("./pcadapt_sampleID2.csv", header = TRUE)
+outflankdf <- cbind(pcadapt_pop[,2], outflank_df)
+colnames(outflankdf)[1] <- "Population"
+outflankdf
+
+
+ind <- outflankdf[,1]
 lociname <- as.character(colnames(num_out_df))
 FstDataFrame <- MakeDiploidFSTMat(num_matrix, lociname, ind)
 
@@ -534,8 +861,8 @@ FstDataFrame <- MakeDiploidFSTMat(num_matrix, lociname, ind)
 #length(outliers_OF)
 #########
 
-outlier <- OutFLANK(FstDataFrame,NumberOfSamples = 2, 
-                     RightTrimFraction = 0.06, LeftTrimFraction = 0.35,
+outlier <- OutFLANK(FstDataFrame,NumberOfSamples = 4, 
+                     RightTrimFraction = 0.06, LeftTrimFraction = 0.06,
                      qthreshold = 0.05, Hmin = 0.1)
 OutFLANKResultsPlotter(outlier, withOutliers = TRUE, NoCorr = TRUE, Hmin = 0.1, 
                        binwidth = 0.005, Zoom = FALSE, RightZoomFraction = 0.05, 
@@ -544,7 +871,7 @@ outlier_OF <- outlier$results$LocusName[outlier$results$OutlierFlag == TRUE]
 print(outlier_OF)
 length(outlier_OF)
 
-
+View(outlierdf)
 outflank_results <- as.data.frame(outlier$results)
 #write.csv(outflank_results, file = "OUTFLANK_results.csv")
 nrow(FstDataFrame)
@@ -555,7 +882,7 @@ plot(outlier$results$He, outlier$results$FST, pch=20, col="grey")
   points(outlier$results$He[outlier$results$qvalues<0.05], y = outlier$results$FST[outlier$results$qvalues<0.05], pch=21, col="blue")
 
 outlier    
-top_candidates <- outlier$results$qvalues<0.05 & outlier$results$He>0.1  
+top_candidates <- outlier$results$pvalues<0.05 & outlier$results$He>0.1  
 topcan <- outlier$results[top_candidates,]
 outlier_loci <- topcan[order(topcan$LocusName),]
 
@@ -606,21 +933,45 @@ manhattan(gwas, chr="CHROM", bp="BP", snp="POS", p="qvalues", main = "Manhattan 
 ```{r, PCAdapt}
 #https://popgen.nescent.org/2016-01-26-SNP-selection.html
 library(pcadapt)
+library(devtools)
+library(qvalue)
+packageVersion("pcadapt")
+
 
 pca_genotype <- read.pcadapt(t(num_out_df))
-str(pca_genotype)
 K <- 25
+x <- pcadapt(pca_genotype, K = K)
+plot(x, option = "screeplot")
 x <- pcadapt(pca_genotype, K = 4, method = c("mahalanobis"), min.maf = 0.05, ploidy =2, LD.clumping = list(size = 200, thr = 0.1))
-summary(x)
-plot(x, option = "qqplot", threshold = 0.1)
-plot(x, option = "stat.distribution") # Distribution of Mahalanobis distances.
-str(x)
-padj <- p.adjust(x$pvalues,method="bonferroni")
+
+num1000 <- num_out_df[, 100000:200000]
+pc_scores <- scores(x, num1000, K=4)
+pop_assignments <- kmeans(pc_scores, centers=4)$cluster
+table(pop_assignments)
+#Identify which samples belong to which populations
+sample_ids <- as.data.frame(outlierdf[,2])
+sample_pop <- data.frame(sample_id = sample_ids, population = pop_assignments)
+
+#write.table(num_out_df, file = "num_out_df.csv", append =FALSE, sep = ",", row.names = FALSE, col.names = TRUE )
+#write.table(sample_pop, file = "pcadapt_sampleID2.csv", append =FALSE, sep = ",", dec = ".", row.names = TRUE, col.names = TRUE )
+padj <- p.adjust(x$pvalues,method="BH")
 alpha <- 0.05
 outliers_pcadapt <- which(padj < alpha)
 length(outliers_pcadapt)
 
-AdaptFlank_outliers <- as.data.frame(outliers_pcadapt[outliers_pcadapt %in% outflank_snp_pos])
+
+qval <- qvalue(x$pvalues)$qvalues
+alpha <- 0.05
+outliers_pcadapt <- which(qval < alpha)
+print(outliers_pcadapt)
+
+plot(x, option = "qqplot", threshold = 0.1)
+plot(x, option = "stat.distribution") # Distribution of Mahalanobis distances.
+str(x)
+
+
+PCAdapt_LFMM_outliers <- as.data.frame(outliers_pcadapt[outliers_pcadapt %in% candidates_envPC1])
+
 ##############################GLM##############################
 temp <- outlierdf[ ,7]
 outlier_loci$LocusName[1] #From outflank
@@ -634,17 +985,6 @@ ggplot(loc1temp, aes(x = factor(loc1), y = temp)) +
  geom_boxplot() + 
  xlab("Major allele count") +
  ylab("Mean Annual Temperature")
-
-```
-
-```{r, qqman}
-
-library(qqman)
-str(gwasResults)
-tail(gwasResults)
-snpsOfInterest
-adapt_gwas
-
 
 ```
 
@@ -683,7 +1023,7 @@ colnames(adapt_gwas)[4] = "P"
 #adapt_gwas <- na.omit(gwas)
 #gwas <- gwas[gwas$P >= 0, ]
 out_pcadapt <- sub("^", "sp", outliers_pcadapt)
-manhattan(adapt_gwas, chr="CHROM", bp="BP", snp="POS", p="P", main = "Manhattan Plot", ylim = c(0,12), cex = 0.8, suggestiveline = T, genomewideline = T, highlight = pcadapt_outflank_snps)
+manhattan(adapt_gwas, chr="CHROM", bp="BP", snp="POS", p="P", main = "Manhattan Plot", ylim = c(0,12), cex = 0.8, suggestiveline = F, genomewideline = F, highlight = pcadapt_outflank_snps)
 
 ```
 
@@ -702,115 +1042,152 @@ install.packages("bayescan.R")
 
 ```
 
-
-``` {r, Maps}
-
+```{r, Map with georeference data}
+#https://www.youtube.com/watch?v=Of_M4kcE9yM&ab_channel=StatisticsGuideswithDrPaulChristiansen
 #https://rstudio-pubs-static.s3.amazonaws.com/676340_b6f5780eb85046ad88a6f59732068631.html
 #devtools::install_github("dkahle/ggmap")
 #install.packages('mapdata')
 
+library(rstudioapi)
+#install.packages('mapdata')
+library(ggmap)
 library(ggplot2)
 library(ggmap)
+
 library(maps)
 library(mapdata)
 library(stringr)
 library(dplyr)
 library(tidyverse)
 library(raster)
-
-??mapdata
-
-usa <- map_data("usa")
+register_google(key = "AIzaSyCK_g3QY-OOmNogSUnWbga1DQNKdadtFO0")
+SampleCoordinates <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Map_Count.csv", stringsAsFactors = FALSE)
 states <- map_data("state")
-ca_df <- subset(states, region == "california")
+west_coast <- subset(states, region %in% c("california"))
 counties <- map_data("county")
 ca_county <- subset(counties, region == "california")
-SampleCoordinates <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Map_Count.csv", stringsAsFactors = FALSE)
+head(ca_county)
+ca_df <- subset(states, region == "california")
+
 ca_base <- ggplot(data = ca_df, mapping = aes(x = long, y = lat, 
                 group = group)) + 
                 coord_fixed(1.3) + 
                 geom_polygon(color = "black", fill = "gray")
 
-ca_base + theme_nothing() + 
-  geom_polygon(data = ca_county, fill = NA, color = "white") +
-  geom_polygon(color = "black", fill = "gray") + 
-  geom_point(data = SampleCoordinates, aes(x=Longitude, y=Latitude, size=Count), inherit.aes =FALSE)
+# grey map of California                
+tiff("ca_base.tiff", , units="in", width=6, height=10, res=300)
+  ca_base
+dev.off()
 
-
-
-ggplot(data = ca_df, mapping = aes(x = long, y = lat, group = group)) + 
-                coord_fixed(1.3) + 
-                geom_polygon(color = "black", fill = "gray") +
-geom_point(data = SampleCoordinates, colour = "red", size=Count))
-
-ll_means <- sapply(sisquoc[2:3], mean)
-sq_map2 <- get_map(location = ll_means,  maptype = "satellite", source = "google", zoom = 15)
-
-###########################################
-
-US <- getData("GADM",country="USA",level=1)
-states    <- c('California')
-california <- US[US$NAME_1 %in% states,]
-
-PNW <- US[US$NAME_1 %in% states,]
-plot(california, axes=TRUE)
-ggplot(california) + geom_polygon(data=california, aes(x=long,y=lat,group=group),
-  fill="cadetblue", color="grey") + coord_equal()
-US$NAME_1
-download.file("https://github.com/mhweber/AWRA_GIS_R_Workshop/blob/gh-pages/files/SRTM_OR.RData?raw=true",
-              "SRTM_OR.RData",
-              method="auto",
-              mode="wb")
-
-load("./SRTM_OR.RData")
-srtm <- getData('SRTM', lon=-122, lat=41)
-srtm1 <- getData('SRTM', lon=-121, lat=40)
-srtm2 <- getData('SRTM', lon=-120, lat=37.3)
-srtm3 <- getData('SRTM', lon=-118.5, lat=35)
-srtm4 <- getData('SRTM', lon=-117, lat=34)
-srtm5 <- getData('SRTM', lon=-115, lat=34)
-srtm6 <- getData('SRTM', lon=-120, lat=34)
-srtm_all <- mosaic(srtm, srtm1, srtm2, srtm3, srtm4, srtm5, srtm6, fun = mean)
-
-plot(srtm_all)
-plot(california, add=TRUE)
-
-srtm_crop_cal <- crop(srtm_all, california)
-srtm_mask_cal <- mask(srtm_crop_cal, california)
-plot(srtm_mask_cal, main="Elevation (m) in California")
-plot(california, add=TRUE)
-
-
-```
-
-```{r, Map with georeference data}
-#https://www.youtube.com/watch?v=Of_M4kcE9yM&ab_channel=StatisticsGuideswithDrPaulChristiansen
-
-
-library(rstudioapi)
-library(ggmap)
-register_google(key = "AIzaSyCK_g3QY-OOmNogSUnWbga1DQNKdadtFO0")
-SampleCoordinates <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Map_Count.csv", stringsAsFactors = FALSE)
-
-cal_box <- make_bbox(lat = Latitude, lon = Longitude, data = SampleCoordinates)
-
+cal_box <- make_bbox(lat = Latitude, lon = Longitude, data = SampleCoordinates, f = .8)
 cal_big <- get_map(location = cal_box, source = "google", maptype = "terrain")
-get_map()
-cal_zoom <- get_map(location = c(lon = -121, lat = 38), zoom = 7, source = "google", maptype = "terrain")
-ggmap(cal_zoom) + 
-  geom_point(data = SampleCoordinates, mapping = aes(x = Longitude, y = Latitude, color = "blue", size = Count))
 
-get_map()
-
-
-
-ca_base + theme_nothing() + 
-  geom_polygon(data = ca_county, fill = NA, color = "white") +
-  geom_polygon(color = "black", fill = "gray") + 
-  geom_point(data = SampleCoordinates, aes(x=Longitude, y=Latitude, size=Count), inherit.aes =FALSE)
+#Save high resolution image in working directory
+tiff("Map_Sample_location.tiff", units="in", width=7, height=10, res=300) 
+ggmap(cal_big) + 
+  geom_point(data = SampleCoordinates, mapping = aes(x = Longitude, y = Latitude, color = Population, size = Count)) +
+    scale_color_manual(values = c("#E7B800","#0072B2", "green4", "darkorchid4", "#FC4E07"))
+dev.off()                            
 ```
 
+```{r, Dendrogram}
+#http://www.sthda.com/english/wiki/beautiful-dendrogram-visualizations-in-r-5-must-known-methods-unsupervised-machine-learning
+# other that I didn't really use: https://www.rpubs.com/dvallslanaquera/clustering
 
+Color_locations <- read.csv("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/Color_labels.csv", header = TRUE)
+library(dendextend)
+
+library(ggdendro)
+library(cluster)
+library(factoextra)
+outlierdf
+dendrodata <- outlierdf[,-1]
+dendro_color <- cbind(Color_locations, dendrodata)
+rownames(dendrodata) <- dendrodata[,1]
+dendrodf <- as.data.frame(dendrodata[,26:ncol(dendrodata)])
+dendrodf[ , 541740:541747]
+dd <- dist(scale(dendrodf), method = "euclidean")
+hc <- hclust(dd, method = "ward.D2")
+
+###############
+fulldata
+fulldata_num <- fulldata[,26:ncol(fulldata)]
+#https://stackoverflow.com/questions/27485549/how-to-colour-the-labels-of-a-dendrogram-by-an-additional-factor-variable-in-r
+hcd <- as.dendrogram(hc)
+labels_colors(hcd)
+par(mfrow = c(1,2))
+plot(hcd, main = "Original dend")
+#adding some color by tree association
+colors_to_use <- unclass(as.factor(dendro_color[,1]))
+colors_to_use <- colors_to_use[order.dendrogram(hcd)]
+colors_match_map <- c(3,3,6,6,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,6,6,2,2,7,2,2,2,2,7,4,6,6,6,7,6,6,4,4,6,4,4,4,4,4,4,3,7,4,7,7,4,7,4,4,4,7,7,4,7,4,4,4,4)
+labels_colors(hcd) <- colors_match_map
+
+
+host <- dendrodata$Host
+plot(hcd, k = 4, border = 2:5, main = "Cluster Dendrogram Grouped by Host Association")
+###############
+plot(hcd)
+hcd %>% 
+  set("leaves_pch", leaves[order.dendrogram(hcd)]) %>% 
+  set("leaves_cex", 1.3) %>% set("leaves_col", 1) %>% 
+  raise.dendrogram (-15) %>% 
+  plot(main = "Dendrogram with Nodes")
+
+hcd %>% 
+  set("leaves_pch", c(19, 19, 17, 17, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 17, 17, 19, 19, 17, 19, 17, 19, 19, 19, 19, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 19, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17)) %>% 
+  set("leaves_cex", 1.4) %>% set("leaves_col", c(9, 9, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 8, 8, 9, 9, 8, 9, 8, 9, 9, 9, 9, 8, 8, 8,8,8,8,8,8,8,8,8,8,8,8, 8, 8, 8, 9, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8)) %>% 
+  raise.dendrogram (-15) %>% 
+  plot(main = "Dendrogram with Nodes")
+
+
+tiff("Dendrogram_Host_region.tiff", units="in", width=14, height=5, res=300) 
+hcd %>% 
+  set("leaves_pch", c(19, 19, 17, 17, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 17, 17, 19, 19, 17, 19, 17, 19, 19, 19, 19, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 19, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17)) %>% 
+  set("leaves_cex", 1.4) %>% set("leaves_col", 1) %>% 
+  raise.dendrogram (-15) %>% 
+  plot(main = "Dendrogram with Nodes")
+dev.off() 
+
+ggdendrogram(hc, rotate = FALSE, size = 2)
+ddata <- dendro_data(hcd, type = "rectangle")
+dendro_plot <- ggplot(segment(ddata)) +
+  geom_segment(aes(x = x, y = y, xend = xend, yend = yend)) + 
+  coord_flip() + 
+  scale_y_reverse(expand = c(0.2, 0))
+
+plot(hc)
+rect.hclust(hc, k = 4, border = 2:5)
+hcd <- as.dendrogram(hc)
+plot(hc)
+plot(hcd)
+png("ClusterDendrogram.png",width=13,height=5,units="in",res=4000)
+plot(hc)
+dev.off()
+dendrogram <- plot(hcd)
+
+  
+
+labels(hcd) <- masterdata$SpecimenID
+labels(hcd)
+plot(hc, labels = NULL, cex=0.8, hang = 0.1, 
+     main = "Cluster dendrogram", sub = NULL,
+     xlab = NULL, ylab = "Height")
+
+#Divide into Subgroups
+sub_grp <- cutree(hc, k =4)
+table(sub_grp)
+
+outlierdf[19, 4] = "Monterey"
+
+########## NOT WORKING #################
+#plot(as.phylo(hc), cex = 0.5, label.offset = 0.5)
+
+#plot(as.phylo(hc), type = "unrooted", cex = 0.6,
+     #no.margin = TRUE)
+
+
+```
 
 ```{r, GO terms}
 
@@ -862,7 +1239,6 @@ GO_term_snp_list <- GO.df %>%
 length(unique(GO_term_snp_list$proteinId))
 length(unique(gene_list2$Protein_ID))
 
-pcadapt_snps
 pcadapt_df <- as.data.frame(pcadapt_snps)
 
 pcadapt_df1 <- pcadapt_df %>% 
@@ -917,5 +1293,11 @@ length(unique(PCAdapt_GO$proteinId))
 
 ```
 
+```{r, align snps}
+
+gff <- read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_genes_20200424.gff", header=F, comment.char="#")
+
+snps.lfmm <- read.csv("./LFMM.outlier.loci.csv", sep = ",", header = FALSE)
+merged.data <- inner_join(gff, samp)
 
 

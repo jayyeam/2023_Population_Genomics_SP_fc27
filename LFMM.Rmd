@@ -436,6 +436,6 @@ out_matrix1 <- as.matrix(out_subset_df1)
 kinship_matrix1 <- A.mat(out_matrix1)
 heatmap(kinship_matrix1, col = colorRampPalette(c("white", "blue"))(100),
         cexRow = 0.4, cexCol = 0.4)
-
+as
 ```
 

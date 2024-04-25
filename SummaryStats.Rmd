@@ -1,0 +1,335 @@
+---
+title: "Summary Statistics"
+output: html_notebook
+---
+
+```{r, Github token}
+library(usethis)
+usethis::create_github_token()
+gitcreds::gitcreds_set()
+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
+
+```
+
+```{r}
+load("/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population_Genomics_SP_fc27/SummaryStats.RData")
+```
+
+```{r, basic stats}
+library(hierfstat)
+heir.table <- outlierdf[,-c(1,2,3,4,5,6,8:26)]
+stats <- basic.stats(heir.table, diploid = TRUE, digits = 4)
+Ho <- as.data.frame(stats$Ho)
+He <- as.data.frame(stats$Hs)
+South_Ho <- mean(Ho[,1])
+Central_Ho <- mean(Ho[,2])
+Marin_Ho <- mean(Ho[,3])
+Mendocino_Ho <- mean(Ho[,4])
+Humboldt_Ho <- mean(Ho[,5])
+
+South_He <- mean(He[,1])
+Central_He <- mean(He[,2])
+Marin_He <- mean(He[,3])
+Mendocino_He <- mean(He[,4])
+Humboldt_He <- mean(He[,5])
+He <- as.data.frame(stats$Hs)
+```
+
+``` {r, more stats from genind object}
+#https://popgen.nescent.org/StartSNP.html
+library(adegenet)
+library(hierfstat)
+library(pegas)
+Geo_pop <- outlierdf$Geographic_Pop
+locus <- num_out_df
+ind <- as.character(outlierdf$Sample_ID) #labels of the individuals
+population <- as.character(outlierdf$Geographic_Pop) #labels of the populations
+Mydata <- df2genind(locus, ploidy = 2, ind.names = ind, pop = population, sep = "")
+div <- summary(Mydata)
+di
+sum.Hexp <- as.data.frame(div$Hexp)
+Hexp <- adegenet::Hs(Mydata, pop = population)
+
+
+
+```
+
+```{r, making table}
+install.packages("gtsummary")
+library(gt)
+
+library(gtsummary)
+
+Summary.stats <- data.frame(Population = c("South", "Central", "Marin", "Mendo", "Humboldt"), N = c(5, 11, 22, 10, 21), He = c(0.294, 0.357, 0.372, 0.341, 0.373), Ho = c(0.397, 0.406, 0.409, 0.369, 0.403))
+
+Summary.stats %>% tbl_summary(by = Population)
+stats.table <- gt::gt(Summary.stats)
+gtsave(stats.table, filename = "Summary_stats_table.html")
+```
+```{r, Dxy}
+nuke <- as.data.frame(fread("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/pixy_K4_dxy.txt", header=T, sep="\t", fill = FALSE))
+
+```
+
+```{r, Fst}
+
+#All of these fst files are windowed by 1 kb
+
+fst1 <- read.table("./fst_geopop_outputs/Hum_Marin_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst2 <- read.table("./fst_geopop_outputs/Hum_Mendo_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst3 <- read.table("./fst_geopop_outputs/Hum_Central_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst4 <- read.table("./fst_geopop_outputs/Marin_Mendo_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst5 <- read.table("./fst_geopop_outputs/Marin_SoCal_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst6 <- read.table("./fst_geopop_outputs/SoCal_Mendo_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst7 <- read.table("./fst_geopop_outputs/Hum_Socal_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst8 <- read.table("./fst_geopop_outputs/Mendo_Central_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst9 <- read.table("./fst_geopop_outputs/Marin_Central_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst10 <- read.table("./fst_geopop_outputs/SoCal_Central_cluster_geopop.windowed.weir.fst", header = TRUE)
+fst11 <- read.table("./fst_geopop_outputs/Host_fst.windowed.weir.fst", header = TRUE)
+
+# Example dataframe
+df <- data.frame(A = 1:5, B = letters[1:5])
+
+# Create a new dataframe with values from column A of df and population in the second column
+fst1pop <- data.frame(Weighted_fst = fst1$WEIGHTED_FST, Population = rep("Humboldt/Marin", nrow(fst1)))
+fst2pop <- data.frame(Weighted_fst = fst2$WEIGHTED_FST, Population = rep("Humboldt/Mendocino", nrow(fst2)))
+fst3pop <- data.frame(Weighted_fst = fst3$WEIGHTED_FST, Population = rep("Humboldt/Central", nrow(fst3)))
+fst4pop <- data.frame(Weighted_fst = fst4$WEIGHTED_FST, Population = rep("Marin/Mendocino", nrow(fst4)))
+fst5pop <- data.frame(Weighted_fst = fst5$WEIGHTED_FST, Population = rep("Marin/SoCal", nrow(fst5)))
+fst6pop <- data.frame(Weighted_fst = fst6$WEIGHTED_FST, Population = rep("Mendocino/SoCal", nrow(fst6)))
+fst7pop <- data.frame(Weighted_fst = fst7$WEIGHTED_FST, Population = rep("Humboldt/SoCal", nrow(fst7)))
+fst8pop <- data.frame(Weighted_fst = fst8$WEIGHTED_FST, Population = rep("Mendocino/Central", nrow(fst8)))
+fst9pop <- data.frame(Weighted_fst = fst9$WEIGHTED_FST, Population = rep("Marin/Central", nrow(fst9)))
+fst10pop <- data.frame(Weighted_fst = fst10$WEIGHTED_FST, Population = rep("SoCal/Central", nrow(fst10)))
+fst11pop <- data.frame(Weighted_fst = fst11$WEIGHTED_FST, Population = rep("Bishop/Monterey", nrow(fst11)))
+
+
+#Combine df's vertically 
+fstfull <- rbind(fst1pop, fst2pop,fst3pop,fst4pop,fst5pop,fst6pop,fst7pop,fst8pop,fst9pop,fst10pop,fst11pop)
+#plot violin
+violin.fst <- ggplot(fstfull, aes(x = Population, y = Weighted_fst, fill = Population)) +
+  geom_violin() +
+  labs(x = "Population", y = "Weighted fst") +
+  theme_classic() +
+  theme(axis.text.x = element_blank()) 
+
+#Save figure
+tiff("Violinplot_Fst.tiff", units="in", width=10, height=7, res=400)
+violin.fst
+dev.off()
+
+
+fst_matrix <- spread(fstfull, key = Population, value = Weighted_fst)
+fst_matrix <- as.matrix(fst_matrix)
+
+m1 <- mean(fst1$WEIGHTED_FST)
+m2 <- mean(fst2$WEIGHTED_FST)
+m3 <- mean(fst3$WEIGHTED_FST)
+m4 <- mean(fst4$WEIGHTED_FST)
+m5 <- mean(fst5$WEIGHTED_FST)
+m6 <- mean(fst6$WEIGHTED_FST)
+m7 <- mean(fst7$WEIGHTED_FST)
+m8 <- mean(fst8$WEIGHTED_FST)
+m9 <- mean(fst9$WEIGHTED_FST)
+m10 <- mean(fst10$WEIGHTED_FST)
+m11 <- mean(fst11$WEIGHTED_FST)
+
+
+```
+
+```{r, Nucleotide Diversity}
+hum_pi <- read.table("./nucleotide_diversity_results/pi_div_humboldt_K5_10kb.windowed.pi", header = TRUE)
+marin_pi <- read.table("./nucleotide_diversity_results/pi_div_marin_K5_10kb.windowed.pi", header = TRUE)
+mendo_pi <- read.table("./nucleotide_diversity_results/pi_div_mendo_K5_10kb.windowed.pi", header = TRUE)
+socal_pi <- read.table("./nucleotide_diversity_results/pi_div_socal_K5_10kb.windowed.pi", header = TRUE)
+central_pi <- read.table("./nucleotide_diversity_results/pi_div_central_K5_10kb.windowed.pi", header = TRUE)
+
+hum_pi <- na.omit(as.data.frame(hum_pi$PI))
+marin_pi <- na.omit(as.data.frame(marin_pi$PI))
+mendo_pi <- na.omit(as.data.frame(mendo_pi$PI))
+socal_pi <- na.omit(as.data.frame(socal_pi$PI))
+central_pi <- na.omit(as.data.frame(central_pi$PI))
+
+mean(hum_pi$`hum_pi$PI`)
+mean(marin_pi$`marin_pi$PI`)
+mean(mendo_pi$`mendo_pi$PI`)
+mean(socal_pi$`socal_pi$PI`)
+mean(central_pi$`central_pi$PI`)
+pi1 <- data.frame(Nucleotide_diversity = hum_pi, Population = rep("Humboldt", nrow(hum_pi)))
+pi2 <- data.frame(Nucleotide_diversity = marin_pi, Population = rep("Marin", nrow(marin_pi)))
+pi3 <- data.frame(Nucleotide_diversity = mendo_pi, Population = rep("Mendocino", nrow(mendo_pi)))
+pi4 <- data.frame(Nucleotide_diversity = socal_pi, Population = rep("SoCal", nrow(socal_pi)))
+pi5 <- data.frame(Nucleotide_diversity = central_pi, Population = rep("Central", nrow(central_pi)))
+
+names(pi1)[1] <- "Nucleotide_Diversity"
+names(pi2)[1] <- "Nucleotide_Diversity"
+names(pi3)[1] <- "Nucleotide_Diversity"
+names(pi4)[1] <- "Nucleotide_Diversity"
+names(pi5)[1] <- "Nucleotide_Diversity"
+
+pi.full <- rbind(pi1,pi2,pi3,pi4,pi5)
+
+pi.plot <- ggplot(pi.full, aes(x = Population, y = Nucleotide_Diversity, fill = Population)) +
+  geom_boxplot() +
+  labs(x = "Population", y = "Nucleotide Diversity") +
+  theme_classic() +
+  theme(axis.text.x = element_blank()) 
+
+```
+
+```{r, Tajima's D}
+hum_d <- read.table("./TajimaD_results/Hum_pop_K5_10kb.Tajima.D", header = TRUE)
+central_d <- read.table("./TajimaD_results/Central_pop_K5_10kb.Tajima.D", header = TRUE)
+marin_d <- read.table("./TajimaD_results/Marin_pop_K5_10kb.Tajima.D", header = TRUE)
+mendo_d <- read.table("./TajimaD_results/Mendo_pop_K5_10kb.Tajima.D", header = TRUE)
+socal_d <- read.table("./TajimaD_results/Socal_pop_K5_10kb.Tajima.D", header = TRUE)
+
+hum_d <- na.omit(as.data.frame(hum_d))
+hum_d$BIN_END <- hum_d$BIN_START + 9999
+marin_d <- na.omit(as.data.frame(marin_d))
+marin_d$BIN_END <- marin_d$BIN_START + 9999
+mendo_d <- na.omit(as.data.frame(mendo_d))
+mendo_d$BIN_END <- mendo_d$BIN_START + 9999
+socal_d <- na.omit(as.data.frame(socal_d))
+socal_d$BIN_END <- socal_d$BIN_START + 9999
+central_d <- na.omit(as.data.frame(central_d))
+central_d$BIN_END <- central_d$BIN_START + 9999
+
+taj1 <- data.frame(Tajimas_D = hum_d$TajimaD, Population = rep("Humboldt", nrow(hum_d)))
+taj2 <- data.frame(Tajimas_D = marin_d$TajimaD, Population = rep("Marin", nrow(marin_d)))
+taj3 <- data.frame(Tajimas_D = mendo_d$TajimaD, Population = rep("Mendocino", nrow(mendo_d)))
+taj4 <- data.frame(Tajimas_D = socal_d$TajimaD, Population = rep("SoCal", nrow(socal_d)))
+taj5 <- data.frame(Tajimas_D = central_d$TajimaD, Population = rep("Central", nrow(central_d)))
+taj.full <- rbind(taj1,taj2,taj3,taj4,taj5)
+
+tajimas.plot <- ggplot(taj.full, aes(x = Population, y = Tajimas_D, fill = Population)) +
+  geom_boxplot() +
+  labs(x = "Population", y = "Tajima's D") +
+  theme_classic() +
+  theme(axis.text.x = element_blank()) 
+
+tiff("Tajimas_D.tiff", units="in", width=10, height=7, res=400)
+tajimas.plot
+dev.off()
+
+
+hist(marin_d$TajimaD,br=20)
+hist(socal_d$TajimaD,br=20)
+hist(mendo_d$TajimaD,br=20)
+hist(central_d$TajimaD,br=20)
+boxplot(central_d$TajimaD,br=20)
+mean(hum_d$TajimaD)
+mean(marin_d$TajimaD)
+mean(mendo_d$TajimaD)
+mean(socal_d$TajimaD)
+mean(central_d$TajimaD)
+
+
+
+signif.marin.low <- marin_d[marin_d$TajimaD < -2, ]
+signif.marin.high <- marin_d[marin_d$TajimaD > 2, ]
+signif.hum.low <- hum_d[hum_d$TajimaD < -2, ]
+signif.hum.high <- hum_d[hum_d$TajimaD > 2, ]
+signif.mendo.low <- mendo_d[mendo_d$TajimaD < -2, ]
+signif.mendo.high <- mendo_d[mendo_d$TajimaD > 2, ]
+signif.central.low <- central_d[central_d$TajimaD < -2, ]
+signif.central.high <- central_d[central_d$TajimaD > 2, ]
+signif.socal.low <- socal_d[socal_d$TajimaD < -2, ]
+signif.socal.high <- socal_d[socal_d$TajimaD > 2, ]
+```
+
+```{r, Hardy-Weinberg}
+hwe <- read.table("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Files/plink.hwe", header = TRUE)
+mean(hwe$O.HET.)
+mean(hwe$E.HET.)
+
+
+```
+
+```{r, Isolation By Distance}
+#using this tutorial: https://adegenet.r-forge.r-project.org/files/tutorial-basics.pdf
+library("adegenet")
+library(hierfstat)
+data(nancycats)
+nancycats
+toto <- genind2genpop(nancycats)
+toto
+Dgen1 <- dist.genpop(toto,method=2)
+Dgeo1 <- dist(nancycats$other$xy)
+nancycats$other$xy
+popgen.df
+toto$tab
+obj$tab[,1:10]
+
+####Create Bishop and Monterey DF
+Ind_pop <- 1:69
+popgen.df <- outlierdf
+popgen.df$Indv_pop <- Ind_pop
+popgen.df <- popgen.df %>% 
+  relocate(Indv_pop)
+
+bishop.df <- popgen.df[popgen.df$Host =="Bishop", ]
+
+
+######################### DOING THIS FOR BISHOP ##########################################
+bishop.geno <- bishop.df[,28:ncol(bishop.df)]
+# Assign the new column names to the dataframe
+bishop.coord <- cbind(bishop.df$Latitude, bishop.df$Longitude) %>% 
+  as.data.frame()
+colnames(bishop.coord) <- c("X", "Y")
+
+
+#First create a genind object
+geo.pop <- bishop.df$Indv_pop
+obj.bishop <- df2genind(bishop.geno, ploidy=2, pop=geo.pop, sep= "/", NA.char = "_")
+#create a genpop object
+bishop.pop <- genind2genpop(obj.bishop)
+
+#Add xy coordinates to objects
+obj.bishop$other$xy <- as.matrix(bishop.coord)
+bishop.pop$other$xy <- as.matrix(bishop.coord)
+bishop.pop$other$xy
+
+#Calculate genetic and spatial distances
+Dgen.bish <- dist.genpop(bishop.pop, method=2)
+Dgeo.bish <- dist(bishop.pop$other$xy)
+#Perform mantel test
+ibd <- mantel.randtest(Dgen.bish,Dgeo.bish)
+ibd
+#Plot IBD The original value of the correlation between the distance matrices is represented by the dot,
+#while histograms represent permuted values (i.e., under the absence of spatial structure).
+plot(ibd)
+
+
+
+```
+
+```{r, IBD Monterey}
+monterey.df <- popgen.df[popgen.df$Host =="Monterey", ]
+mont.geno <- monterey.df[,28:ncol(monterey.df)]
+# Assign the new column names to the dataframe
+mont.coord <- cbind(monterey.df$Latitude, monterey.df$Longitude) %>% 
+  as.data.frame()
+colnames(mont.coord) <- c("X", "Y")
+
+
+#First create a genind object
+geo.mont.pop <- monterey.df$Indv_pop
+mont.obj <- df2genind(mont.geno, ploidy=2, pop=geo.mont.pop, sep= "/", NA.char = "_")
+mont.pop <- genind2genpop(mont.obj)
+
+mont.obj$other$xy <- as.matrix(mont.coord)
+mont.pop$other$xy <- as.matrix(mont.coord)
+
+
+bishop.pop$other$xy
+Dgen.bish <- dist.genpop(bishop.pop, method=2)
+Dgeo.bish <- dist(bishop.pop$other$xy)
+ibd <- mantel.randtest(Dgen.bish,Dgeo.bish)
+ibd
+#Plot IBD The original value of the correlation between the distance matrices is represented by the dot,
+#while histograms represent permuted values (i.e., under the absence of spatial structure).
+plot(ibd)
+
+```
+

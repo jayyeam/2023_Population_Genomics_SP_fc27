@@ -1,0 +1,341 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*.
+
+```{r, github token}
+
+library(usethis)
+usethis::create_github_token()
+gitcreds::gitcreds_set()
+# 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 accesstoken won't expire
+
+```
+
+```{r, Assigning Gene Ontology}
+library(dplyr)
+library(ggplot2)
+genes <- as.data.frame(read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_genes_20200424.gff", header=F, comment.char="#"))
+GO.df <- as.data.frame(read.table("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_proteins_20200424_GO.tab", header=F, sep="\t", fill = TRUE, quote = ""))
+#removing some columns and seperating INFO column
+KOG.df <- as.data.frame(read.table("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_proteins_20200424_KOG.tab.gz", header=F, sep="\t", fill = TRUE, quote = ""))
+
+```
+
+```{r, KOG ANNOTATIONS envPC1}
+###### EXTRACT SCAFFOLD ID FROM POSITION ########
+candidate_snps1 <- data.frame(colnames(df_clean[,top_candidates_envPC1])) # candidates1
+colnames(candidate_snps1)[1] <- "name"
+colnames(genes)[1] <- "scaffold"
+candidate_snps1$position <- gsub(".*_(\\d+)$", "\\1", candidate_snps1$name)
+candidate_snps1$name <- gsub("_\\d+$", "", candidate_snps1$name)
+colnames(candidate_snps1)[1] <- "scaffold"
+colnames(candidate_snps1)[2] <- "pos"
+View(candidate_snps1)
+
+# Loop candidates over genes to identify candidate genes 
+LFMM_genes1 <- data.frame()
+for (i in 1:nrow(candidate_snps1)) {
+  pos <- candidate_snps1$pos[i]
+  scaffold <- candidate_snps1$scaffold[i]
+  subset_df <- genes[genes$V1 == scaffold & 
+                              genes$V4 <= pos & 
+                              genes$V5 >= pos, ]
+  LFMM_genes1 <- rbind(LFMM_genes1, subset_df)
+}
+
+print(LFMM_genes1)
+candidate_snps1$pos[1]
+
+
+
+LFMM_genes1 <- data.frame(LFMM_genes1$V1, LFMM_genes1$V4, LFMM_genes1$V5, LFMM_genes1$V3, do.call(rbind, strsplit(LFMM_genes1$V9, split = ";", fixed = TRUE)))
+colnames(LFMM_genes1)[1] = "Chrom"
+colnames(LFMM_genes1)[2] = "Start_Pos"
+colnames(LFMM_genes1)[3] = "End_pos"
+colnames(LFMM_genes1)[4] = "Type"
+colnames(LFMM_genes1)[5] = "Name"
+colnames(LFMM_genes1)[6] = "Protein_ID"
+colnames(LFMM_genes1)[7] = "V7"
+colnames(LFMM_genes1)[8] = "Product_Name"
+LFMM_genes1$Protein_ID <- gsub("proteinId", "", LFMM_genes1$Protein_ID)
+
+LFMM_genes2 <- LFMM_genes1[!(LFMM_genes1$Type=="exon"), ]
+
+LFMM_genes2$Protein_ID <- as.numeric(LFMM_genes2$Protein_ID)
+
+
+################################################
+colnames(KOG.df)[1] = "TransciptID"
+colnames(KOG.df)[2] = "ProteinID"
+colnames(KOG.df)[3] = "KOGterm"
+colnames(KOG.df)[4] = "KOGtermDescription"
+colnames(KOG.df)[5] = "Type"
+colnames(KOG.df)[6] = "Process"
+################################################
+
+#Pull goterms that are in gene_list2 dataframe
+KOG_list_envPC1 <- as.data.frame(KOG.df %>% 
+  filter(KOG.df$ProteinID %in% LFMM_genes2$Protein_ID))
+
+GO_list_envPC1 <- as.data.frame(GO.df %>% 
+  filter(GO.df$proteinId %in% LFMM_genes2$Protein_ID))
+counts_envPC1 <- table(KOG_list_envPC1$Type)
+counts_envPC1.df <- data.frame(counts_envPC2)
+sorted_function_envPC2 <- function_envPC2[order(function_envPC2$Freq), ]
+
+
+```
+
+```{r, do the same for envPC2}
+candidate_snps2 <- data.frame(colnames(df_clean[,candidates2]))
+
+colnames(candidate_snps2)[1] <- "name"
+colnames(genes)[1] <- "scaffold"
+candidate_snps2$position <- gsub(".*_(\\d+)$", "\\1", candidate_snps2$name)
+candidate_snps2$name <- gsub("_\\d+$", "", candidate_snps2$name)
+colnames(candidate_snps2)[1] <- "scaffold"
+colnames(candidate_snps2)[2] <- "pos"
+candidate_snps2
+
+LFMM_genes2 <- data.frame()
+for (i in 1:nrow(candidate_snps2)) {
+  pos <- candidate_snps2$pos[i]
+  scaffold <- candidate_snps2$scaffold[i]
+  subset_df <- genes[genes$scaffold == scaffold & 
+                              genes$V4 <= pos & 
+                              genes$V5 >= pos, ]
+  LFMM_genes2 <- rbind(LFMM_genes2, subset_df)
+}
+
+print(LFMM_genes2)
+#genes_filtered_env2 <- genes[genes$scaffold %in% candidate_snps2$scaffold, ]
+
+#envPC2_genes <- genes_filtered_env2[genes_filtered_env2$V4 <= candidate_snps2$pos & genes_filtered_env2$V5 >= candidate_snps2$pos, ]
+
+
+envPC2_genes2 <- data.frame(LFMM_genes2$scaffold, LFMM_genes2$V4, LFMM_genes2$V5, LFMM_genes2$V3, do.call(rbind, strsplit(LFMM_genes2$V9, split = ";", fixed = TRUE)))
+colnames(envPC2_genes2)[1] = "Chrom"
+colnames(envPC2_genes2)[2] = "Start_Pos"
+colnames(envPC2_genes2)[3] = "End_pos"
+colnames(envPC2_genes2)[4] = "Type"
+colnames(envPC2_genes2)[5] = "Name"
+colnames(envPC2_genes2)[6] = "Protein_ID"
+colnames(envPC2_genes2)[7] = "V7"
+colnames(envPC2_genes2)[8] = "Product_Name"
+envPC2_genes2$Protein_ID <- gsub("proteinId", "", envPC2_genes2$Protein_ID)
+
+envPC2_genes <- envPC2_genes2[!(envPC2_genes2$Type=="exon"), ]
+
+envPC2_genes2$Protein_ID <- as.numeric(envPC2_genes2$Protein_ID)
+
+################################################
+colnames(KOG.df)[1] = "TransciptID"
+colnames(KOG.df)[2] = "ProteinID"
+colnames(KOG.df)[3] = "KOGterm"
+colnames(KOG.df)[4] = "KOGtermDescription"
+colnames(KOG.df)[5] = "Type"
+colnames(KOG.df)[6] = "Process"
+################################################
+
+#Pull goterms that are in gene_list2 dataframe
+KOG_list_envPC2 <- as.data.frame(KOG.df %>% 
+  filter(KOG.df$ProteinID %in% envPC2_genes2$Protein_ID))
+
+View(KOG_list_envPC2)
+
+#Create a barplot of KOG functions
+counts_envPC2 <- table(KOG_list_envPC2$Type)
+function_envPC2 <- data.frame(counts_envPC2)
+sorted_function_envPC2 <- function_envPC2[order(function_envPC2$Freq), ]
+barplotPC2 <- ggplot(sorted_function_envPC2, aes(x=Var1, y=Freq)) + 
+  geom_bar(stat = "identity")
+tiff("Barplot_function_pv2.tiff", units="in", width=6, height=6, res=400) 
+barplotPC2 + coord_flip() + labs(x = "Biological Function", y= "Frequency")
+dev.off()
+counts_envPC2 <- table(KOG_list_envPC2$Type)
+counts_envPC2.df <- as.data.frame(counts_envPC2)
+function_envPC2 <- data.frame(counts_envPC2)
+
+```
+
+```{r, Host Function}
+candidate_snps3 <- data.frame(colnames(df_clean[,top_candidates_HOST])) #candidates3 top_candidates_HOST
+
+colnames(candidate_snps3)[1] <- "name"
+candidate_snps3$position <- gsub(".*_(\\d+)$", "\\1", candidate_snps3$name)
+candidate_snps3$name <- gsub("_\\d+$", "", candidate_snps3$name)
+colnames(candidate_snps3)[1] <- "scaffold"
+colnames(candidate_snps3)[2] <- "pos"
+candidate_snps3
+
+LFMM_genes3 <- data.frame()
+for (i in 1:nrow(candidate_snps3)) {
+  pos <- candidate_snps3$pos[i]
+  scaffold <- candidate_snps3$scaffold[i]
+  subset_df <- genes[genes$V1 == scaffold & 
+                              genes$V4 <= pos & 
+                              genes$V5 >= pos, ]
+  LFMM_genes3 <- rbind(LFMM_genes3, subset_df)
+}
+
+print(LFMM_genes3)
+
+host_genes3 <- data.frame(LFMM_genes3$V1, LFMM_genes3$V4, LFMM_genes3$V5, LFMM_genes3$V3, do.call(rbind, strsplit(LFMM_genes3$V9, split = ";", fixed = TRUE)))
+colnames(host_genes3)[1] = "Chrom"
+colnames(host_genes3)[2] = "Start_Pos"
+colnames(host_genes3)[3] = "End_pos"
+colnames(host_genes3)[4] = "Type"
+colnames(host_genes3)[5] = "Name"
+colnames(host_genes3)[6] = "Protein_ID"
+colnames(host_genes3)[7] = "V7"
+colnames(host_genes3)[8] = "Product_Name"
+host_genes3$Protein_ID <- gsub("proteinId", "", host_genes3$Protein_ID)
+
+host_genes <- host_genes3[!(host_genes3$Type=="exon"), ]
+
+host_genes$Protein_ID <- as.numeric(host_genes$Protein_ID)
+
+################################################
+colnames(KOG.df)[1] = "TransciptID"
+colnames(KOG.df)[2] = "ProteinID"
+colnames(KOG.df)[3] = "KOGterm"
+colnames(KOG.df)[4] = "KOGtermDescription"
+colnames(KOG.df)[5] = "Type"
+colnames(KOG.df)[6] = "Process"
+################################################
+#Pull goterms that are in gene_list2 dataframe
+KOG_list_host <- as.data.frame(KOG.df %>% 
+  filter(KOG.df$ProteinID %in% host_genes$Protein_ID))
+
+
+KOG.df$ProteinID
+KOG_list_host <- data.frame()
+for (i in 1:nrow(host_genes)) {
+  genes <- host_genes$Protein_ID[i]
+  subset_df <- KOG.df[KOG.df$ProteinID == genes, ]
+  KOG_list_host <- rbind(KOG_list_host, subset_df)
+}
+KOG_list_host <- na.omit(KOG_list_host)
+
+GO_list_host <- as.data.frame(GO.df %>% 
+  filter(GO.df$proteinId %in% host_genes$Protein_ID))
+
+#Create a barplot of KOG functions
+counts_host <- table(GO_list_host$goName)
+function_host <- data.frame(counts_host)
+sorted_function_host <- function_host[order(function_host$Freq), ]
+barplot.host <- ggplot(function_host, aes(x=Var1, y=Freq)) + 
+  geom_bar(stat = "identity")
+tiff("Barplot_function_host.tiff", units="in", width=6, height=6, res=400) 
+barplot.host + coord_flip() + labs(x = "Biological Function", y= "Frequency")
+dev.off()
+counts_host <- table(KOG_list_host$KOGtermDescription)
+count_host.df <- as.data.frame(counts_host)
+function_host <- data.frame(counts_host)
+top_25 <- head(function_host[order(-function_host$Freq), ], 25)
+
+counts_PC1 <- table(KOG_list_envPC1$KOGtermDescription)
+function_PC1 <- data.frame(counts_PC1)
+sorted_function_host <- function_host[order(function_host$Freq), ]
+barplot.PC1 <- ggplot(function_PC1, aes(x=Var1, y=Freq)) + 
+  geom_bar(stat = "identity")
+barplot.PC1 + coord_flip() + labs(x = "Biological Function", y= "Frequency")
+tiff("Barplot_function_host.tiff", units="in", width=6, height=6, res=400) 
+barplot.host + coord_flip() + labs(x = "Biological Function", y= "Frequency")
+dev.off()
+counts_host <- table(KOG_list_host$KOGtermDescription)
+count_host.df <- as.data.frame(counts_host)
+function_host <- data.frame(counts_host)
+top_25 <- head(function_host[order(-function_host$Freq), ], 25)
+
+```
+
+```{r, Merge barplot}
+merge_counts_df <- merge(counts_envPC1.df, count_host.df, by = 'Var1', all = TRUE, suffixes = c('_envPC2', '_Host'))
+
+# Replace NA values in 'frequency' column with 0
+merge_counts_df[is.na(merge_counts_df)] <- 0
+merge_counts_df <- merge_counts_df %>%
+  mutate(Frequency_combined = Freq_envPC2 + Freq_Host)
+
+
+barplot.merge <- ggplot(merge_counts_df) +
+  geom_bar(aes(x = as.numeric(as.factor(Var1)) - 0.2, y = Freq_envPC2, fill = "envPC1"), stat = "identity", width = 0.4, alpha = 0.5) +
+  geom_bar(aes(x = as.numeric(as.factor(Var1)) + 0.2, y = Freq_Host, fill = "Host"), stat = "identity", width = 0.4, alpha = 0.5) +
+  scale_fill_manual(name = "Dataframe", values = c("envPC1" = "blue", "Host" = "red")) +
+  labs(x = "Biological Function", y = "Frequency") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "right",
+        legend.title = element_blank()) +
+  scale_x_continuous(breaks = 1:nrow(merge_counts_df), labels = merge_counts_df$Var1) + 
+  coord_flip()
+tiff("Barplot_function_merged.tiff", units="in", width=7, height=4, res=400) 
+barplot.merge
+dev.off()
+```
+
+```{r, check in tajimas D is in candidates}
+signif.marin.high
+signif.marin.low
+
+tajima_genes_marin <- data.frame()
+for (i in 1:nrow(candidate_snps3)) {
+  pos <- candidate_snps3$pos[i]
+  scaffold <- candidate_snps3$scaffold[i]
+  subset_df <- signif.marin.high[signif.marin.high$CHROM == scaffold & 
+                              signif.marin.high$BIN_START <= pos & 
+                              signif.marin.high$BIN_END >= pos, ]
+  tajima_genes_marin <- rbind(tajima_genes_marin, subset_df)
+}
+tajima_genes_marin
+
+
+#Make a list of candidatesnps3 that are in the same window of tajimas D
+filtered_snps <- data.frame()
+for (i in 1:nrow(signif.marin.low)) {
+  filtered <- candidate_snps3[candidate_snps3$scaffold == signif.marin.low$CHROM[i] & 
+                             candidate_snps3$pos >= signif.marin.low$BIN_START[i] & 
+                             candidate_snps3$pos <= signif.marin.low$BIN_END[i], ]
+  filtered_snps <- rbind(filtered_snps, filtered)
+}
+rownames(filtered_snps) <- NULL
+
+
+```
+
+```{r, fst in candidates}
+sig.fst1 <- fst1[fst1$WEIGHTED_FST > 0.25, ] #humboldt / marin
+sig.fst2 <- fst2[fst2$WEIGHTED_FST > 0.25, ] #Humboldt / mendo
+sig.fst3 <- fst3[fst3$WEIGHTED_FST > 0.25, ] #Humboldt / central
+sig.fst4 <- fst4[fst4$WEIGHTED_FST > 0.25, ] #marin / mendo
+sig.fst5 <- fst5[fst5$WEIGHTED_FST > 0.25, ] #Marin / socal
+sig.fst6 <- fst6[fst6$WEIGHTED_FST > 0.25, ] # Mendo / socal
+sig.fst7 <- fst7[fst7$WEIGHTED_FST > 0.25, ] #Humboldt / socal
+sig.fst8 <- fst8[fst8$WEIGHTED_FST > 0.25, ] #Mendo / Central
+sig.fst9 <- fst9[fst9$WEIGHTED_FST > 0.25, ] #Marin / Central
+sig.fst10 <- fst10[fst10$WEIGHTED_FST > 0.25, ] # Socal / Central
+sig.fst11 <- fst11[fst11$WEIGHTED_FST > 0.25, ] # Bishop Monterey
+
+#Make a list of candidatesnps3 that are in the same window of tajimas D
+filtered_snps.fst5 <- data.frame()
+for (i in 1:nrow(sig.fst5)) {
+  filtered <- candidate_snps3[candidate_snps3$scaffold == sig.fst5$CHROM[i] & 
+                             candidate_snps3$pos >= sig.fst5$BIN_START[i] & 
+                             candidate_snps3$pos <= sig.fst5$BIN_END[i], ]
+  filtered_snps.fst5 <- rbind(filtered_snps.fst5, filtered)
+}
+rownames(filtered_snps.fst5) <- NULL
+filtered_snps.fst5
+```
+
+
+
+
+
+

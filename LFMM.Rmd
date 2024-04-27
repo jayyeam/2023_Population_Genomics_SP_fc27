@@ -10,37 +10,45 @@ Try executing this chunk by clicking the *Run* button within the chunk or by pla
 ```{r, PCA on environmental variables}
 
 outlierdf
-fulldf <- fulldata[,8:26]
-env_outdf <- as.matrix(fulldf[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ])
+env_outdf <- outlierdf[,8:26]
+#env_outdf <- as.matrix(fulldf[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ])
 colnames(env_outdf) <- c("Annual Mean Temperauture", "Mean Tempereature of Warmest Month", "Mean Temperature of Coldest Quarter", "Annual Precipitation", "Precipitation of Wettest Month", "Precipitation of Driest Month", "Precipitation Seasonality", "Precipitation of Wettest Quarter", "Precipitation of Driest Quarter", "Precipitation of Warmest Quarter", "Precipitation of Coldest Quarter", "Mean Diurnal Range", "Isothermality", "Temperature Seasonality", "Max Temperature of Warmest Month", "Min Temperature of Coldest Month", "Temperature Annual Range", "Mean Temperature of Wettest Quarter", "Mean Temperature of Coldest Quarter")
 
 env_outdf1 <- as.data.frame(env_outdf) %>% 
   relocate("Temperature Seasonality", "Max Temperature of Warmest Month", "Min Temperature of Coldest Month", "Temperature Annual Range", "Mean Temperature of Wettest Quarter", "Mean Temperature of Coldest Quarter")
 env_outdf2 <- as.matrix(env_outdf1)
-scaled_envdf <- scale(env_outdf)
+scaled_envdf <- scale(env_outdf, center = TRUE, scale = TRUE)
 env_pca <- prcomp(scaled_envdf, scale = TRUE)
 summary(env_pca)
+
 pc_loadings <- env_pca$rotation[,1:3]
 
 # view the loadings as a heatmap
 heatmap(pc_loadings, Rowv=NA, Colv=NA, scale="none")
-envPC1 <- predict(env_pca)[, 1]
-envPC2 <- predict(env_pca)[, 2]
+envPC1 <- predict(env_pca)[,1]
+envPC2 <- predict(env_pca)[,2]
+
+Host <- as.data.frame(outlierdf$Host)
+Host <- Host %>%
+  mutate(Host = ifelse(outlierdf$Host == "Bishop", 0, 1))
+Host <- Host[,-c(1)]
 
 ```
 
 ```{r, PCA of environment data}
-env_pca
+env_pca$rotation
 
 env_out1 <- data.frame(env_pca$x)
 env_out1$plotx <- env_out1[,1]
 env_out1$ploty <- env_out1[,2]
+envPC1 <- env_out1[,1]
+envPC2 <- env_out1[,2]
 #Calculate PC scores
 env_eigenvalues <- env_pca$sdev^2
 env_prop_eigen <- env_eigenvalues/sum(env_eigenvalues)
 
 Latitude = outlierdf$Latitude
-Host = outlierdf$Host
+
 #https://sjmgarnier.github.io/viridis/reference/scale_viridis.html
 env_PCA <- ggplot(env_out1, aes(x=plotx, y = ploty, color=Latitude)) + geom_point(size = 3.0, aes(shape = Host)) + xlab("PC1 (56.5%)") + ylab("PC2 (31.2%)") + scale_colour_gradientn(colours = viridis(100)) + theme_bw() + theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
 env_PCA
@@ -131,6 +139,60 @@ t.test(((hostdf %>% filter(Host == 'Bishop'))$Latitude), ((hostdf %>% filter(Hos
 
 ```
 
+```{r, LFMM2}
+library(LEA)
+#FOR envPC1
+mod.PC1 <- LEA::lfmm2(input = df_clean, env = envPC1, K = 3)
+pv.PC1 <-lfmm2.test(object = mod.PC1, input = df_clean, env = envPC1, linear = TRUE)
+z.scores = pv.PC1$zscores
+lambda = median(z.scores^2)/qchisq(1/2, df = 1)
+adjusted.p.values.PC1 = pchisq(z.scores^2/lambda, df = 1, lower = F)
+p.adj.PC1 <- p.adjust(adjusted.p.values.PC1, method="BH")
+
+qq(pv.PC1$pvalues)
+
+plot(-log10(p.adj.PC1),
+     col = "grey", cex = 1, pch = 19)
+     abline(h = -log10(0.1), col = "blue")
+     abline(h = -log10(0.2), col = "red")
+
+     #this is with the predict() function
+     
+count_below_0_2 <- sum(p.adj.PC1 < 0.1)
+     
+#For envPC2 
+mod.PC2 <- LEA::lfmm2(input = df_clean, env = envPC2, K = 3)
+pv.PC2 <-lfmm2.test(object = mod.PC2, input = df_clean, env = envPC2, linear = TRUE)
+z.scores.PC2 <- pv.PC2$zscores
+lambda = median(z.scores.PC2^2)/qchisq(1/2, df = 1)
+adjusted.p.values.PC2 = pchisq(z.scores.PC2^2/lambda, df = 1, lower = F)
+p.adj.PC2 <- p.adjust(adjusted.p.values.PC2, method="BH")
+
+qq(pv.PC2$zscores)
+
+
+plot(-log10(pv.PC2$pvalues),
+     col = "grey", cex = 1, pch = 19)
+     abline(h = -log10(0.1), col = "blue")
+     abline(h = -log10(0.2), col = "red")
+
+
+#For Host
+mod.host <- LEA::lfmm2(input = df_clean, env = Host, K = 3)
+pv.host <-lfmm2.test(object = mod.host, input = df_clean, env = Host, linear = TRUE)
+z.scores.host <- pv.host$zscores
+lambda = median(z.scores.host^2)/qchisq(1/2, df = 1)
+adjusted.p.values.host = pchisq(z.scores.host^2/lambda, df = 1, lower = F)
+p.adj.host <- p.adjust(adjusted.p.values.host, method="BH")
+
+qq(pv.host$pvalues)
+
+plot(-log10(pv.host$pvalues),
+     col = "grey", cex = 1, pch = 19)
+     abline(h = -log10(0.1), col = "blue")
+     abline(h = -log10(0.2), col = "red")
+```
+
 ```{r, PCA with 120 outlier loci}
 
 columns_to_select <- p.out.lfmm$`rownames(pv)`
@@ -155,42 +217,7 @@ subset_PCA <- ggplot(subset_out, aes(x=plotx, y = ploty, color=Latitude)) + geom
 subset_PCA
 ```
 
-
 ```{r, candidate genes}
-Importance of components:
-                          PC1    PC2     PC3     PC4     PC5     PC6     PC7     PC8     PC9
-Standard deviation     10.333 5.5059 5.12779 3.29726 2.74516 2.51364 2.38571 2.23422 2.21226
-Proportion of Variance  0.372 0.1056 0.09162 0.03788 0.02626 0.02202 0.01983 0.01739 0.01705
-Cumulative Proportion   0.372 0.4777 0.56928 0.60716 0.63342 0.65543 0.67526 0.69266 0.70971
-                          PC10    PC11    PC12    PC13    PC14    PC15    PC16    PC17    PC18
-Standard deviation     2.11259 1.96242 1.88175 1.84961 1.81882 1.74326 1.73684 1.72457 1.68762
-Proportion of Variance 0.01555 0.01342 0.01234 0.01192 0.01153 0.01059 0.01051 0.01036 0.00992
-Cumulative Proportion  0.72526 0.73868 0.75102 0.76294 0.77446 0.78505 0.79556 0.80592 0.81585
-                          PC19   PC20    PC21    PC22    PC23    PC24    PC25    PC26    PC27
-Standard deviation     1.64325 1.5890 1.57809 1.52242 1.49464 1.46190 1.45843 1.38574 1.35312
-Proportion of Variance 0.00941 0.0088 0.00868 0.00808 0.00778 0.00745 0.00741 0.00669 0.00638
-Cumulative Proportion  0.82526 0.8340 0.84273 0.85081 0.85859 0.86604 0.87345 0.88014 0.88652
-                          PC28    PC29    PC30    PC31   PC32    PC33    PC34    PC35    PC36
-Standard deviation     1.32645 1.28659 1.27157 1.25749 1.2334 1.18941 1.17294 1.13877 1.12269
-Proportion of Variance 0.00613 0.00577 0.00563 0.00551 0.0053 0.00493 0.00479 0.00452 0.00439
-Cumulative Proportion  0.89265 0.89842 0.90405 0.90956 0.9149 0.91979 0.92458 0.92910 0.93349
-                          PC37    PC38   PC39   PC40    PC41   PC42    PC43    PC44    PC45
-Standard deviation     1.08968 1.07284 1.0445 1.0171 0.99963 0.9880 0.94618 0.92877 0.90847
-Proportion of Variance 0.00414 0.00401 0.0038 0.0036 0.00348 0.0034 0.00312 0.00301 0.00288
-Cumulative Proportion  0.93763 0.94164 0.9454 0.9490 0.95253 0.9559 0.95905 0.96206 0.96493
-                          PC46    PC47    PC48    PC49    PC50    PC51    PC52    PC53    PC54
-Standard deviation     0.87452 0.87297 0.85285 0.82677 0.81400 0.79341 0.77888 0.72849 0.72278
-Proportion of Variance 0.00266 0.00266 0.00253 0.00238 0.00231 0.00219 0.00211 0.00185 0.00182
-Cumulative Proportion  0.96760 0.97025 0.97279 0.97517 0.97748 0.97967 0.98178 0.98363 0.98545
-                         PC55    PC56    PC57    PC58    PC59   PC60    PC61    PC62   PC63
-Standard deviation     0.6991 0.67596 0.65369 0.63732 0.62265 0.5859 0.56373 0.52440 0.5071
-Proportion of Variance 0.0017 0.00159 0.00149 0.00142 0.00135 0.0012 0.00111 0.00096 0.0009
-Cumulative Proportion  0.9872 0.98875 0.99024 0.99165 0.99300 0.9942 0.99531 0.99626 0.9972
-                          PC64    PC65    PC66    PC67    PC68      PC69
-Standard deviation     0.47532 0.44646 0.44476 0.39080 0.19815 4.589e-15
-Proportion of Variance 0.00079 0.00069 0.00069 0.00053 0.00014 0.000e+00
-Cumulative Proportion  0.99795 0.99864 0.99933 0.99986 1.00000 1.000e+00
-R Console
 
 
 genes <- as.data.frame(read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_genes_20200424.gff", header=F, comment.char="#"))

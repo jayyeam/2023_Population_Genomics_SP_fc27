@@ -16,8 +16,36 @@ colnames(env_outdf) <- c("Annual Mean Temperauture", "Mean Tempereature of Warme
 
 env_outdf1 <- as.data.frame(env_outdf) %>% 
   relocate("Temperature Seasonality", "Max Temperature of Warmest Month", "Min Temperature of Coldest Month", "Temperature Annual Range", "Mean Temperature of Wettest Quarter", "Mean Temperature of Coldest Quarter")
+temp.env <- env_outdf1[,c(2:8)]
+precip.env <- env_outdf1[,c(9:16)]
+precip.env <- precip.env[,-c(4)]
+weather.env <-- env_outdf1[,c(1,17,18)]
+
+#Precipitaiton
+precip.pca <-prcomp(precip.env, scale = TRUE, center = TRUE)
+summary(precip.pca)
+precip_loadings <- precip.pca$rotation[,1:3]
+heatmap(precip_loadings, Rowv=NA, Colv=NA, scale="none")
+precip_PC1 <- predict(precip.pca)[,1]
+                                  
+#Temperature
+temp.pca <- prcomp(temp.env, scale = TRUE, center = TRUE)
+summary(temp.pca)
+temp_loadings <- temp.pca$rotation[,1:3]
+heatmap(temp_loadings, Rowv=NA, Colv=NA, scale="none")
+temp_PC1 <- predict(temp.pca)[,1]
+
+#Weather Heterogeneity
+weather.pca <- prcomp(weather.env, scale = TRUE, center = TRUE)
+summary(weather.pca)
+weather_PC1 <- predict(weather.pca)[,1]
+weather_loadings <- temp.pca$rotation[,1:3]
+heatmap(weather_loadings, Rowv=NA, Colv=NA, scale="none")
+weather_PC1 <- predict(weather.pca)[,1]
+
+
 env_outdf2 <- as.matrix(env_outdf1)
-scaled_envdf <- scale(env_outdf, center = TRUE, scale = TRUE)
+scaled_envdf <- scale(env_outdf)
 env_pca <- prcomp(scaled_envdf, scale = TRUE)
 summary(env_pca)
 
@@ -33,6 +61,18 @@ Host <- Host %>%
   mutate(Host = ifelse(outlierdf$Host == "Bishop", 0, 1))
 Host <- Host[,-c(1)]
 
+```
+
+
+```{r, RDA}
+
+library(vegan)
+mydata
+num_matrix <- as.matrix(df_clean)
+env_matrix <- as.matrix(env_outdf)
+
+myrda <- rda(num_matrix ~ env_matrix, data = outlierdf)
+plot(myrda)
 ```
 
 ```{r, PCA of environment data}
@@ -142,40 +182,69 @@ t.test(((hostdf %>% filter(Host == 'Bishop'))$Latitude), ((hostdf %>% filter(Hos
 ```{r, LFMM2}
 library(LEA)
 #FOR envPC1
-mod.PC1 <- LEA::lfmm2(input = df_clean, env = envPC1, K = 3)
-pv.PC1 <-lfmm2.test(object = mod.PC1, input = df_clean, env = envPC1, linear = TRUE)
+mod.PC1 <- LEA::lfmm2(input = df_clean, env = temp_PC1, K = 3)
+pv.PC1 <-lfmm2.test(object = mod.PC1, input = df_clean, env = temp_PC1, linear = TRUE)
 z.scores = pv.PC1$zscores
 lambda = median(z.scores^2)/qchisq(1/2, df = 1)
 adjusted.p.values.PC1 = pchisq(z.scores^2/lambda, df = 1, lower = F)
 p.adj.PC1 <- p.adjust(adjusted.p.values.PC1, method="BH")
-
 qq(pv.PC1$pvalues)
 
+temperature <- env_outdf1[,9]
+tem1 <- LEA::lfmm2(input = df_clean, env = temperature, K = 3)
+tem2 <-lfmm2.test(object = tem1, input = df_clean, env = temperature, linear = TRUE)
+z.scores = tem2$zscores
+lambda = median(z.scores^2)/qchisq(1/2, df = 1)
+adjusted.p.values.temp = pchisq(z.scores^2/lambda, df = 1, lower = F)
+p.adj.temp <- p.adjust(adjusted.p.values.temp, method="BH")
+
+tiff( "manhattan_PC1.png", units="in", width=8, height=4, res=400)
 plot(-log10(p.adj.PC1),
-     col = "grey", cex = 1, pch = 19)
+     col = "grey", cex = 1, 
+     xlab = "Genomic position",
+     ylab = "-log10(pvalue)",
+     pch = 19)
      abline(h = -log10(0.1), col = "blue")
      abline(h = -log10(0.2), col = "red")
+dev.off()
 
-     #this is with the predict() function
-     
-count_below_0_2 <- sum(p.adj.PC1 < 0.1)
-     
 #For envPC2 
-mod.PC2 <- LEA::lfmm2(input = df_clean, env = envPC2, K = 3)
-pv.PC2 <-lfmm2.test(object = mod.PC2, input = df_clean, env = envPC2, linear = TRUE)
+mod.PC2 <- LEA::lfmm2(input = df_clean, env = precip_PC1, K = 3)
+pv.PC2 <-lfmm2.test(object = mod.PC2, input = df_clean, env = precip_PC1, linear = TRUE)
 z.scores.PC2 <- pv.PC2$zscores
 lambda = median(z.scores.PC2^2)/qchisq(1/2, df = 1)
 adjusted.p.values.PC2 = pchisq(z.scores.PC2^2/lambda, df = 1, lower = F)
 p.adj.PC2 <- p.adjust(adjusted.p.values.PC2, method="BH")
-
 qq(pv.PC2$zscores)
 
-
-plot(-log10(pv.PC2$pvalues),
-     col = "grey", cex = 1, pch = 19)
+tiff( "manhattan_PC2.png", units="in", width=8, height=4, res=400)
+plot(-log10(p.adj.PC2),
+     col = "grey", cex = 1, 
+     xlab = "Genomic position",
+     ylab = "-log10(pvalue)",
+     pch = 19)
      abline(h = -log10(0.1), col = "blue")
      abline(h = -log10(0.2), col = "red")
+dev.off()
 
+#For weather heterogeneity
+mod.PC3 <- LEA::lfmm2(input = df_clean, env = weather_PC1, K = 3)
+pv.PC3 <-lfmm2.test(object = mod.PC3, input = df_clean, env = weather_PC1, linear = TRUE)
+z.scores.PC3 <- pv.PC3$zscores
+lambda = median(z.scores.PC3^2)/qchisq(1/2, df = 1)
+adjusted.p.values.PC3 = pchisq(z.scores.PC3^2/lambda, df = 1, lower = F)
+p.adj.PC3 <- p.adjust(adjusted.p.values.PC3, method="BH")
+qq(pv.PC3$zscores)
+
+tiff( "manhattan_PC3.png", units="in", width=8, height=4, res=400)
+plot(-log10(p.adj.PC3),
+     col = "grey", cex = 1, 
+     xlab = "Genomic position",
+     ylab = "-log10(pvalue)",
+     pch = 19)
+     abline(h = -log10(0.1), col = "blue")
+     abline(h = -log10(0.2), col = "red")
+dev.off()
 
 #For Host
 mod.host <- LEA::lfmm2(input = df_clean, env = Host, K = 3)
@@ -186,12 +255,55 @@ adjusted.p.values.host = pchisq(z.scores.host^2/lambda, df = 1, lower = F)
 p.adj.host <- p.adjust(adjusted.p.values.host, method="BH")
 
 qq(pv.host$pvalues)
-
-plot(-log10(pv.host$pvalues),
-     col = "grey", cex = 1, pch = 19)
+tiff( "manhattan_host.png", units="in", width=8, height=4, res=400)
+plot(-log10(p.adj.host),
+     col = "grey", cex = 1, 
+     xlab = "Genomic position",
+     ylab = "-log10(pvalue)",
+     pch = 19)
      abline(h = -log10(0.1), col = "blue")
      abline(h = -log10(0.2), col = "red")
+dev.off()
+
+
 ```
+
+```{r, Candidate Genes}
+library(tidyr)
+p.adj.host 
+pv.host.df <- rownames_to_column(as.data.frame(pv.host$pvalues), var = "Position")
+pval.host <- data.frame(cbind(pv.host.df$Position, p.adj.host))
+cand.host <- pval.host %>% filter(pval.host$p.adj.host < 0.2)
+
+pv.PC1.df <- rownames_to_column(as.data.frame(pv.PC1$pvalues), var = "Position")
+pval.PC1 <- data.frame(cbind(pv.PC1.df$Position, p.adj.PC1))
+cand.PC1 <- pval.PC1 %>% filter(p.adj.PC1 < 0.2)
+
+pv.PC2.df <- rownames_to_column(as.data.frame(pv.PC2$pvalues), var = "Position")
+pval.PC2 <- data.frame(cbind(pv.PC2.df$Position, p.adj.PC2))
+cand.PC2 <- pval.PC2 %>% filter(p.adj.PC2 < 0.2) 
+
+common1.2 <- inner_join(cand.PC1, cand.PC2, by = "V1")
+
+common1.host <- inner_join(cand.PC1, cand.host, by = "V1")
+common2.host <- inner_join(cand.PC2, cand.host, by = "V1")
+```
+
+```{r, Correlation Test}
+
+devtools::install_github("kassambara/ggpubr")
+library("ggpubr")
+cor.test(p.adj.PC1, p.adj.PC2, method = c("pearson"))
+
+cor.data <- cbind(as.data.frame(p.adj.PC1), as.data.frame(p.adj.PC2))
+
+ggscatter(cor.data, x = "p.adj.PC1", y = "p.adj.PC2", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Temperature", ylab = "Precipitation")
+
+```
+
 
 ```{r, PCA with 120 outlier loci}
 

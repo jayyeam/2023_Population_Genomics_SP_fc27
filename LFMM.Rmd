@@ -13,7 +13,7 @@ outlierdf
 env_outdf <- outlierdf[,8:26]
 #env_outdf <- as.matrix(fulldf[-c(27,28,31,32,61,64,71,72,73,74,75,76,77), ])
 colnames(env_outdf) <- c("Annual Mean Temperauture", "Mean Tempereature of Warmest Month", "Mean Temperature of Coldest Quarter", "Annual Precipitation", "Precipitation of Wettest Month", "Precipitation of Driest Month", "Precipitation Seasonality", "Precipitation of Wettest Quarter", "Precipitation of Driest Quarter", "Precipitation of Warmest Quarter", "Precipitation of Coldest Quarter", "Mean Diurnal Range", "Isothermality", "Temperature Seasonality", "Max Temperature of Warmest Month", "Min Temperature of Coldest Month", "Temperature Annual Range", "Mean Temperature of Wettest Quarter", "Mean Temperature of Coldest Quarter")
-
+write.table(env_outdf, file = "env_outdf.csv", sep = ",", col.names = TRUE, row.names = TRUE) 
 env_outdf1 <- as.data.frame(env_outdf) %>% 
   relocate("Temperature Seasonality", "Max Temperature of Warmest Month", "Min Temperature of Coldest Month", "Temperature Annual Range", "Mean Temperature of Wettest Quarter", "Mean Temperature of Coldest Quarter")
 temp.env <- env_outdf1[,c(2:8)]
@@ -27,14 +27,14 @@ summary(precip.pca)
 precip_loadings <- precip.pca$rotation[,1:3]
 heatmap(precip_loadings, Rowv=NA, Colv=NA, scale="none")
 precip_PC1 <- predict(precip.pca)[,1]
-                                  
+write.table(precip_loadings, file = "precip_loadings.csv", sep = ",", col.names = TRUE, row.names = TRUE)                      
 #Temperature
 temp.pca <- prcomp(temp.env, scale = TRUE, center = TRUE)
 summary(temp.pca)
 temp_loadings <- temp.pca$rotation[,1:3]
 heatmap(temp_loadings, Rowv=NA, Colv=NA, scale="none")
 temp_PC1 <- predict(temp.pca)[,1]
-
+write.table(temp_loadings, file = "temp_loadings.csv", sep = ",", col.names = TRUE, row.names = TRUE)   
 #Weather Heterogeneity
 weather.pca <- prcomp(weather.env, scale = TRUE, center = TRUE)
 summary(weather.pca)
@@ -60,7 +60,7 @@ Host <- as.data.frame(outlierdf$Host)
 Host <- Host %>%
   mutate(Host = ifelse(outlierdf$Host == "Bishop", 0, 1))
 Host <- Host[,-c(1)]
-
+Latitude <- outlierdf$Latitude
 ```
 
 
@@ -187,6 +187,7 @@ pv.PC1 <-lfmm2.test(object = mod.PC1, input = df_clean, env = temp_PC1, linear =
 z.scores = pv.PC1$zscores
 lambda = median(z.scores^2)/qchisq(1/2, df = 1)
 adjusted.p.values.PC1 = pchisq(z.scores^2/lambda, df = 1, lower = F)
+hist(adjusted.p.values.PC1)
 p.adj.PC1 <- p.adjust(adjusted.p.values.PC1, method="BH")
 qq(pv.PC1$pvalues)
 
@@ -198,14 +199,13 @@ lambda = median(z.scores^2)/qchisq(1/2, df = 1)
 adjusted.p.values.temp = pchisq(z.scores^2/lambda, df = 1, lower = F)
 p.adj.temp <- p.adjust(adjusted.p.values.temp, method="BH")
 
-tiff( "manhattan_PC1.png", units="in", width=8, height=4, res=400)
+tiff( "manhattan_PC1.png", units="in", width=5, height=3, res=400)
 plot(-log10(p.adj.PC1),
-     col = "grey", cex = 1, 
+     col = "grey", cex = 0.6, 
      xlab = "Genomic position",
      ylab = "-log10(pvalue)",
      pch = 19)
-     abline(h = -log10(0.1), col = "blue")
-     abline(h = -log10(0.2), col = "red")
+     abline(h = -log10(0.1), col = "red")
 dev.off()
 
 #For envPC2 
@@ -214,36 +214,36 @@ pv.PC2 <-lfmm2.test(object = mod.PC2, input = df_clean, env = precip_PC1, linear
 z.scores.PC2 <- pv.PC2$zscores
 lambda = median(z.scores.PC2^2)/qchisq(1/2, df = 1)
 adjusted.p.values.PC2 = pchisq(z.scores.PC2^2/lambda, df = 1, lower = F)
+hist(adjusted.p.values.PC2)
 p.adj.PC2 <- p.adjust(adjusted.p.values.PC2, method="BH")
 qq(pv.PC2$zscores)
 
-tiff( "manhattan_PC2.png", units="in", width=8, height=4, res=400)
+tiff( "manhattan_PC2.png", units="in", width=5, height=3, res=400)
 plot(-log10(p.adj.PC2),
-     col = "grey", cex = 1, 
+     col = "grey", cex = .6, 
      xlab = "Genomic position",
      ylab = "-log10(pvalue)",
      pch = 19)
-     abline(h = -log10(0.1), col = "blue")
-     abline(h = -log10(0.2), col = "red")
+     abline(h = -log10(0.1), col = "red")
 dev.off()
 
-#For weather heterogeneity
-mod.PC3 <- LEA::lfmm2(input = df_clean, env = weather_PC1, K = 3)
-pv.PC3 <-lfmm2.test(object = mod.PC3, input = df_clean, env = weather_PC1, linear = TRUE)
+#For all climate 
+mod.PC3 <- LEA::lfmm2(input = df_clean, env = temp_PC1 + precip_PC1 + Latitude, K = 3)
+pv.PC3 <-lfmm2.test(object = mod.PC3, input = df_clean, env = temp_PC1 + precip_PC1 + Latitude, linear = TRUE)
 z.scores.PC3 <- pv.PC3$zscores
 lambda = median(z.scores.PC3^2)/qchisq(1/2, df = 1)
 adjusted.p.values.PC3 = pchisq(z.scores.PC3^2/lambda, df = 1, lower = F)
+hist(adjusted.p.values.PC3)
 p.adj.PC3 <- p.adjust(adjusted.p.values.PC3, method="BH")
 qq(pv.PC3$zscores)
 
-tiff( "manhattan_PC3.png", units="in", width=8, height=4, res=400)
+tiff( "manhattan_PC3.png", units="in", width=5, height=3, res=400)
 plot(-log10(p.adj.PC3),
-     col = "grey", cex = 1, 
+     col = "grey", cex = 0.6, 
      xlab = "Genomic position",
      ylab = "-log10(pvalue)",
      pch = 19)
-     abline(h = -log10(0.1), col = "blue")
-     abline(h = -log10(0.2), col = "red")
+     abline(h = -log10(0.1), col = "red")
 dev.off()
 
 #For Host
@@ -255,14 +255,13 @@ adjusted.p.values.host = pchisq(z.scores.host^2/lambda, df = 1, lower = F)
 p.adj.host <- p.adjust(adjusted.p.values.host, method="BH")
 
 qq(pv.host$pvalues)
-tiff( "manhattan_host.png", units="in", width=8, height=4, res=400)
+tiff( "manhattan_host.png", units="in", width=5, height=3, res=400)
 plot(-log10(p.adj.host),
-     col = "grey", cex = 1, 
+     col = "grey", cex = 0.6, 
      xlab = "Genomic position",
      ylab = "-log10(pvalue)",
      pch = 19)
-     abline(h = -log10(0.1), col = "blue")
-     abline(h = -log10(0.2), col = "red")
+     abline(h = -log10(0.1), col = "red")
 dev.off()
 
 

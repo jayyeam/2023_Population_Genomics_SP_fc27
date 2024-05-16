@@ -10,6 +10,9 @@ load("/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population
 
 ```{r, basic stats}
 library(hierfstat)
+boot.fst <- boot.ppfst(dat=heir.table,nboot=2,quant=c(0.025,0.975),diploid=TRUE)
+data(gtrunchier)
+test.between(df_clean,test.lev=Locality,rand.unit=Patch)
 heir.table <- outlierdf[,-c(1,2,3,4,5,6,8:26)]
 stats <- basic.stats(heir.table, diploid = TRUE, digits = 4)
 Ho <- as.data.frame(stats$Ho)

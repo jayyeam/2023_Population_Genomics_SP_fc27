@@ -10,6 +10,7 @@ Try executing this chunk by clicking the *Run* button within the chunk or by pla
 
 
 ```{r, Assigning Gene Ontology}
+#load("/Users/jyeam/Documents/Projects/2022_Population_Genomics/R/2023_Population_Genomics_SP_fc27/LFMM.RData")
 library(dplyr)
 library(ggplot2)
 genes <- as.data.frame(read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_genes_20200424.gff", header=F, comment.char="#"))
@@ -21,14 +22,31 @@ KOG.df <- as.data.frame(read.table("/Users/jyeam/Documents/Projects/2022_Populat
 
 ```{r, KOG ANNOTATIONS envPC1}
 ###### EXTRACT SCAFFOLD ID FROM POSITION ########
-candidate_snps1 <- data.frame(colnames(df_clean[,top_candidates_envPC1])) # candidates1
+pv.PC1.df <- rownames_to_column(as.data.frame(pv.PC1$pvalues), var = "Position")
+pval.PC1 <- data.frame(cbind(pv.PC1.df$Position, p.adj.PC1))
+cand.PC1 <- pval.PC1 %>% filter(p.adj.PC1 < 0.05)
+cand.PC1$p.adj.PC1 <- as.numeric(cand.PC1$p.adj.PC1)
+# Calculate the 25th percentile of 'p.adj.PC1'
+
+p_adj_25th_percentile <- quantile(cand.PC1$p.adj.PC1, 0.1)
+# Create a new DataFrame with rows where 'p.adj.PC1' is less than or equal to the 25th percentile
+cand.temp <- cand.PC1[cand.PC1$p.adj.PC1 <= p_adj_25th_percentile, ]
+# Output the results
+cat("25th percentile of 'p.adj.PC1':", p_adj_25th_percentile, "\n")
+cat("\nNew DataFrame with the lowest 25% 'p.adj.PC1':\n")
+print(cand.temp)
+
+candidate_snps1 <- cand.PC1 # data.frame(colnames(df_clean[,candidates1])) # candidates1
 colnames(candidate_snps1)[1] <- "name"
-colnames(genes)[1] <- "scaffold"
 candidate_snps1$position <- gsub(".*_(\\d+)$", "\\1", candidate_snps1$name)
 candidate_snps1$name <- gsub("_\\d+$", "", candidate_snps1$name)
 colnames(candidate_snps1)[1] <- "scaffold"
-colnames(candidate_snps1)[2] <- "pos"
-View(candidate_snps1)
+colnames(candidate_snps1)[2] <- "pval"
+colnames(candidate_snps1)[3] <- "pos"
+candidate_snps1$scaffold <- sub("Response ", "", candidate_snps1$scaffold)
+candidate_snps1
+
+genes <- as.data.frame(read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_genes_20200424.gff", header=F, comment.char="#"))
 
 # Loop candidates over genes to identify candidate genes 
 LFMM_genes1 <- data.frame()
@@ -40,10 +58,6 @@ for (i in 1:nrow(candidate_snps1)) {
                               genes$V5 >= pos, ]
   LFMM_genes1 <- rbind(LFMM_genes1, subset_df)
 }
-
-print(LFMM_genes1)
-candidate_snps1$pos[1]
-
 
 
 LFMM_genes1 <- data.frame(LFMM_genes1$V1, LFMM_genes1$V4, LFMM_genes1$V5, LFMM_genes1$V3, do.call(rbind, strsplit(LFMM_genes1$V9, split = ";", fixed = TRUE)))
@@ -58,7 +72,6 @@ colnames(LFMM_genes1)[8] = "Product_Name"
 LFMM_genes1$Protein_ID <- gsub("proteinId", "", LFMM_genes1$Protein_ID)
 
 LFMM_genes2 <- LFMM_genes1[!(LFMM_genes1$Type=="exon"), ]
-
 LFMM_genes2$Protein_ID <- as.numeric(LFMM_genes2$Protein_ID)
 
 
@@ -75,31 +88,51 @@ colnames(KOG.df)[6] = "Process"
 KOG_list_envPC1 <- as.data.frame(KOG.df %>% 
   filter(KOG.df$ProteinID %in% LFMM_genes2$Protein_ID))
 
+KOG_list_envPC1 <- data.frame()
+for (i in 1:nrow(LFMM_genes2)) {
+  genes <- LFMM_genes2$Protein_ID[i]
+  subset_df <- KOG.df[KOG.df$ProteinID == genes, ]
+  KOG_list_envPC1 <- rbind(KOG_list_envPC1, subset_df)
+}
+KOG_list_envPC1 <- na.omit(KOG_list_envPC1)
+View(KOG_list_envPC1)
 GO_list_envPC1 <- as.data.frame(GO.df %>% 
-  filter(GO.df$proteinId %in% LFMM_genes2$Protein_ID))
+  filter(GO.df$V1 %in% LFMM_genes2$Protein_ID))
+
+GO_list_envPC1 <- GO_list_envPC1 %>% 
+  filter(GO_list_envPC1$V4 =="molecular_function")
+
 counts_envPC1 <- table(KOG_list_envPC1$Type)
-counts_envPC1.df <- data.frame(counts_envPC2)
+counts_envPC1.df <- data.frame(counts_envPC1)
 sorted_function_envPC2 <- function_envPC2[order(function_envPC2$Freq), ]
 
 
 ```
 
 ```{r, do the same for envPC2}
-candidate_snps2 <- data.frame(colnames(df_clean[,candidates2]))
+#candidate_snps2 <- data.frame(colnames(df_clean[,candidates2]))
 
+pv.PC2.df <- rownames_to_column(as.data.frame(pv.PC2$pvalues), var = "Position")
+pval.PC2 <- data.frame(cbind(pv.PC2.df$Position, p.adj.PC2))
+cand.PC2 <- pval.PC2 %>% filter(p.adj.PC2 < 0.1)
+candidate_snps2 <- cand.PC2
 colnames(candidate_snps2)[1] <- "name"
-colnames(genes)[1] <- "scaffold"
 candidate_snps2$position <- gsub(".*_(\\d+)$", "\\1", candidate_snps2$name)
 candidate_snps2$name <- gsub("_\\d+$", "", candidate_snps2$name)
 colnames(candidate_snps2)[1] <- "scaffold"
-colnames(candidate_snps2)[2] <- "pos"
+colnames(candidate_snps2)[2] <- "pval"
+colnames(candidate_snps2)[3] <- "pos"
+candidate_snps2$scaffold <- sub("Response ", "", candidate_snps2$scaffold)
+
 candidate_snps2
+
+genes <- as.data.frame(read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_genes_20200424.gff", header=F, comment.char="#"))
 
 LFMM_genes2 <- data.frame()
 for (i in 1:nrow(candidate_snps2)) {
   pos <- candidate_snps2$pos[i]
   scaffold <- candidate_snps2$scaffold[i]
-  subset_df <- genes[genes$scaffold == scaffold & 
+  subset_df <- genes[genes$V1 == scaffold & 
                               genes$V4 <= pos & 
                               genes$V5 >= pos, ]
   LFMM_genes2 <- rbind(LFMM_genes2, subset_df)
@@ -111,7 +144,7 @@ print(LFMM_genes2)
 #envPC2_genes <- genes_filtered_env2[genes_filtered_env2$V4 <= candidate_snps2$pos & genes_filtered_env2$V5 >= candidate_snps2$pos, ]
 
 
-envPC2_genes2 <- data.frame(LFMM_genes2$scaffold, LFMM_genes2$V4, LFMM_genes2$V5, LFMM_genes2$V3, do.call(rbind, strsplit(LFMM_genes2$V9, split = ";", fixed = TRUE)))
+envPC2_genes2 <- data.frame(LFMM_genes2$V1, LFMM_genes2$V4, LFMM_genes2$V5, LFMM_genes2$V3, do.call(rbind, strsplit(LFMM_genes2$V9, split = ";", fixed = TRUE)))
 colnames(envPC2_genes2)[1] = "Chrom"
 colnames(envPC2_genes2)[2] = "Start_Pos"
 colnames(envPC2_genes2)[3] = "End_pos"
@@ -122,7 +155,7 @@ colnames(envPC2_genes2)[7] = "V7"
 colnames(envPC2_genes2)[8] = "Product_Name"
 envPC2_genes2$Protein_ID <- gsub("proteinId", "", envPC2_genes2$Protein_ID)
 
-envPC2_genes <- envPC2_genes2[!(envPC2_genes2$Type=="exon"), ]
+envPC2_genes2 <- envPC2_genes2[!(envPC2_genes2$Type=="exon"), ]
 
 envPC2_genes2$Protein_ID <- as.numeric(envPC2_genes2$Protein_ID)
 
@@ -135,9 +168,19 @@ colnames(KOG.df)[5] = "Type"
 colnames(KOG.df)[6] = "Process"
 ################################################
 
+genes <- as.data.frame(read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_genes_20200424.gff", header=F, comment.char="#"))
+
 #Pull goterms that are in gene_list2 dataframe
-KOG_list_envPC2 <- as.data.frame(KOG.df %>% 
-  filter(KOG.df$ProteinID %in% envPC2_genes2$Protein_ID))
+#KOG_list_envPC2 <- as.data.frame(KOG.df %>% 
+  #filter(KOG.df$ProteinID %in% envPC2_genes2$Protein_ID))
+
+KOG_list_envPC2 <- data.frame()
+for (i in 1:nrow(envPC2_genes2)) {
+  genes <- envPC2_genes2$Protein_ID[i]
+  subset_df <- KOG.df[KOG.df$ProteinID == genes, ]
+  KOG_list_envPC2 <- rbind(KOG_list_envPC2, subset_df)
+}
+KOG_list_envPC2 <- na.omit(KOG_list_envPC2)
 
 View(KOG_list_envPC2)
 
@@ -157,19 +200,42 @@ function_envPC2 <- data.frame(counts_envPC2)
 ```
 
 ```{r, Host Function}
-candidate_snps3 <- data.frame(colnames(df_clean[,top_candidates_HOST])) #candidates3 top_candidates_HOST
+pv.host.df <- rownames_to_column(as.data.frame(pv.host$pvalues), var = "Position")
+pval.host <- data.frame(cbind(pv.host.df$Position, p.adj.host))
+cand.host <- pval.host %>% filter(p.adj.host < 0.1)
+cand.host$p.adj.host <- as.numeric(cand.host$p.adj.host)
+# Calculate the 25th percentile of 'p.adj.PC1'
 
+p_adj_25th_percentile <- quantile(cand.host$p.adj.host, 0.5) #not using for now
+candidates.host <- cand.host[cand.host$p.adj.host <= p_adj_25th_percentile, ]
+candidates.host
+
+candidate_snps3 <- cand.host
 colnames(candidate_snps3)[1] <- "name"
 candidate_snps3$position <- gsub(".*_(\\d+)$", "\\1", candidate_snps3$name)
 candidate_snps3$name <- gsub("_\\d+$", "", candidate_snps3$name)
 colnames(candidate_snps3)[1] <- "scaffold"
-colnames(candidate_snps3)[2] <- "pos"
+colnames(candidate_snps3)[2] <- "pval"
+colnames(candidate_snps3)[3] <- "pos"
+candidate_snps3$scaffold <- sub("Response ", "", candidate_snps3$scaffold)
 candidate_snps3
 
+###########
+repeated_scaffolds <- candidate_snps3 %>%
+  count(scaffold) %>%
+  filter(n >= 2)
+# Step 2: Retain only rows in 'candidates_snps3' where 'scaffold' appears at least twice
+candidate_snps3_filtered <- candidate_snps3 %>%
+  semi_join(repeated_scaffolds, by = "scaffold")
+print(candidate_snps3_filtered)
+
+###################
+genes <- as.data.frame(read.delim("/Users/jyeam/Documents/Projects/2022_Population_Genomics/Downloads/Suipun1/Suipun1_GeneCatalog_genes_20200424.gff", header=F, comment.char="#"))
+
 LFMM_genes3 <- data.frame()
-for (i in 1:nrow(candidate_snps3)) {
-  pos <- candidate_snps3$pos[i]
-  scaffold <- candidate_snps3$scaffold[i]
+for (i in 1:nrow(candidate_snps3_filtered)) {
+  pos <- candidate_snps3_filtered$pos[i]
+  scaffold <- candidate_snps3_filtered$scaffold[i]
   subset_df <- genes[genes$V1 == scaffold & 
                               genes$V4 <= pos & 
                               genes$V5 >= pos, ]
@@ -202,8 +268,9 @@ colnames(KOG.df)[5] = "Type"
 colnames(KOG.df)[6] = "Process"
 ################################################
 #Pull goterms that are in gene_list2 dataframe
-KOG_list_host <- as.data.frame(KOG.df %>% 
-  filter(KOG.df$ProteinID %in% host_genes$Protein_ID))
+
+#KOG_list_host <- as.data.frame(KOG.df %>% 
+  #filter(KOG.df$ProteinID %in% host_genes$Protein_ID))
 
 
 KOG.df$ProteinID
@@ -214,53 +281,79 @@ for (i in 1:nrow(host_genes)) {
   KOG_list_host <- rbind(KOG_list_host, subset_df)
 }
 KOG_list_host <- na.omit(KOG_list_host)
+#KOG_list_host <- KOG_list_host %>% filter(KOG_list_host$Process != "POORLY CHARACTERIZED")
+View(KOG_list_host)
+#write.table(KOG_list_host, file = "KOG_gene_function_HOST.csv", sep=",")
 
 GO_list_host <- as.data.frame(GO.df %>% 
-  filter(GO.df$proteinId %in% host_genes$Protein_ID))
+  filter(GO.df$V1 %in% host_genes$Protein_ID))
+GO_list_host <- GO_list_host %>% 
+  filter(GO_list_host$V4 =="molecular_function")
+1687868
+```
 
+```{r, barplot}
 #Create a barplot of KOG functions
-counts_host <- table(GO_list_host$goName)
+counts_host <- table(KOG_list_host$Type)
 function_host <- data.frame(counts_host)
 sorted_function_host <- function_host[order(function_host$Freq), ]
 barplot.host <- ggplot(function_host, aes(x=Var1, y=Freq)) + 
-  geom_bar(stat = "identity")
-tiff("Barplot_function_host.tiff", units="in", width=6, height=6, res=400) 
-barplot.host + coord_flip() + labs(x = "Biological Function", y= "Frequency")
+  geom_bar(stat = "identity") +
+  theme_classic()
+tiff("Barplot_function_host.tiff", units="in", width=6, height=3, res=400) 
+barplot.host + coord_flip() + labs(x = "KOG Class", y= "Frequency")
 dev.off()
-counts_host <- table(KOG_list_host$KOGtermDescription)
+counts_host <- table(KOG_list_host$Type)
 count_host.df <- as.data.frame(counts_host)
 function_host <- data.frame(counts_host)
 top_25 <- head(function_host[order(-function_host$Freq), ], 25)
 
-counts_PC1 <- table(KOG_list_envPC1$KOGtermDescription)
+counts_PC1 <- table(KOG_list_envPC1$Type)
 function_PC1 <- data.frame(counts_PC1)
-sorted_function_host <- function_host[order(function_host$Freq), ]
+sorted_function_PC1 <- function_PC1[order(function_PC1$Freq), ]
 barplot.PC1 <- ggplot(function_PC1, aes(x=Var1, y=Freq)) + 
-  geom_bar(stat = "identity")
+  geom_bar(stat = "identity") +
+  theme_classic()
+barplot.PC1 + coord_flip() + labs(x = "KOG Class", y= "Frequency") 
+tiff("Barplot_function_PC1.tiff", units="in", width=6, height=3, res=400) 
 barplot.PC1 + coord_flip() + labs(x = "Biological Function", y= "Frequency")
-tiff("Barplot_function_host.tiff", units="in", width=6, height=6, res=400) 
-barplot.host + coord_flip() + labs(x = "Biological Function", y= "Frequency")
 dev.off()
-counts_host <- table(KOG_list_host$KOGtermDescription)
-count_host.df <- as.data.frame(counts_host)
+counts_PC1 <- table(KOG_list_host$KOGtermDescription)
+count_PC1.df <- as.data.frame(counts_PC1)
 function_host <- data.frame(counts_host)
 top_25 <- head(function_host[order(-function_host$Freq), ], 25)
+
+counts_PC2 <- table(KOG_list_envPC2$Type)
+function_PC2 <- data.frame(counts_PC2)
+sorted_function_PC2 <- function_PC2[order(function_PC2$Freq), ]
+barplot.PC2 <- ggplot(function_PC2, aes(x=Var1, y=Freq)) + 
+  geom_bar(stat = "identity") +
+  theme_classic()
+barplot.PC2 + coord_flip() + labs(x = "Biological Function", y= "Frequency")
+tiff("Barplot_function_PC2.tiff", units="in", width=6, height=3, res=400) 
+barplot.PC2 + coord_flip() + labs(x = "Biological Function", y= "Frequency")
+dev.off()
+counts_PC2 <- table(KOG_list_PC2$Type)
+count_PC2.df <- as.data.frame(counts_PC2)
 
 ```
 
 ```{r, Merge barplot}
-merge_counts_df <- merge(counts_envPC1.df, count_host.df, by = 'Var1', all = TRUE, suffixes = c('_envPC2', '_Host'))
 
+merge_counts_df <- merge(function_PC1, function_PC2, by = 'Var1', all = TRUE, suffixes = c('_Temperature', '_Precipitation'))
+merge_counts_df <- merge(merge_counts_df, function_host, by = 'Var1', all = TRUE)
+colnames(merge_counts_df)[4] <- "Freq_Host"
 # Replace NA values in 'frequency' column with 0
 merge_counts_df[is.na(merge_counts_df)] <- 0
 merge_counts_df <- merge_counts_df %>%
-  mutate(Frequency_combined = Freq_envPC2 + Freq_Host)
+  mutate(Frequency_combined = Freq_Temperature + Freq_Precipitation + Freq_Host)
 
 
 barplot.merge <- ggplot(merge_counts_df) +
-  geom_bar(aes(x = as.numeric(as.factor(Var1)) - 0.2, y = Freq_envPC2, fill = "envPC1"), stat = "identity", width = 0.4, alpha = 0.5) +
-  geom_bar(aes(x = as.numeric(as.factor(Var1)) + 0.2, y = Freq_Host, fill = "Host"), stat = "identity", width = 0.4, alpha = 0.5) +
-  scale_fill_manual(name = "Dataframe", values = c("envPC1" = "blue", "Host" = "red")) +
+  geom_bar(aes(x = as.numeric(as.factor(Var1)) - 0.2, y = Freq_Temperature, fill = "Temperature"), stat = "identity", width = 0.4, alpha = 0.5) +
+  geom_bar(aes(x = as.numeric(as.factor(Var1)) + 0.2, y = Freq_Precipitation, fill = "Precipitation"), stat = "identity", width = 0.4, alpha = 0.5) +
+  geom_bar(aes(x = as.numeric(as.factor(Var1)) + 0, y = Freq_Host, fill = "Host"), stat = "identity", width = 0.4, alpha = 0.5) +
+  scale_fill_manual(name = "Dataframe", values = c("Temperature" = "blue", "Precipitation" = "green",  "Host" = "red")) +
   labs(x = "Biological Function", y = "Frequency") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
@@ -268,6 +361,20 @@ barplot.merge <- ggplot(merge_counts_df) +
         legend.title = element_blank()) +
   scale_x_continuous(breaks = 1:nrow(merge_counts_df), labels = merge_counts_df$Var1) + 
   coord_flip()
+barplot.merge
+
+barplot.merge <- ggplot(merge_counts_df, aes(x = Var1)) +
+  geom_bar(aes(y = Freq_Temperature, fill = "Temperature"), stat = "identity", position = position_dodge(width = 1), alpha = 0.7) +
+  geom_bar(aes(y = Freq_Precipitation, fill = "Precipitation"), stat = "identity", position = position_dodge(width = 1), alpha = 0.7) +
+  geom_bar(aes(y = Freq_Host, fill = "Host"), stat = "identity", position = position_dodge(width = 1), alpha = 0.7) +
+  scale_fill_manual(name = "Dataframe", values = c("Temperature" = "blue", "Precipitation" = "green", "Host" = "red")) +
+  labs(x = "Biological Function", y = "Frequency") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "right") +
+  scale_x_discrete(labels = merge_counts_df$Var1) +
+  coord_flip()  # Retain flipped coordinates if desired
+barplot.merge
+
 tiff("Barplot_function_merged.tiff", units="in", width=7, height=4, res=400) 
 barplot.merge
 dev.off()
@@ -326,6 +433,8 @@ for (i in 1:nrow(sig.fst5)) {
 rownames(filtered_snps.fst5) <- NULL
 filtered_snps.fst5
 ```
+
+```{r, candidates}
 
 
 
